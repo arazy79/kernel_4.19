@@ -1,12 +1,37 @@
-name: Sync Folder Antar Repo/Branch
-run-name: Sync dari ${{ github.repository }}@${{ github.ref_name }} → target
+name: Sync Folder Antar Repo
+run-name: Sync: ${{ github.input.src_repo }}@${{ github.input.src_branch }} → ${{ github.input.tgt_repo }}@${{ github.input.tgt_branch }}
 
 on:
-  push:
-    branches: [ "main" ]  # sesuaikan branch pemicu kamu
-    paths:
-      - 'folder_sumber/**'
-  workflow_dispatch:  # ✅ INI YANG BIKIN TOMBOL RUN MUNCUL!
+  workflow_dispatch:
+    inputs:
+      src_repo:
+        description: 'Repo Sumber (username/nama-repo)'
+        required: true
+        default: 'akun-ini/repo-sumber'
+      src_branch:
+        description: 'Branch Sumber'
+        required: true
+        default: 'main'
+      src_folder:
+        description: 'Folder Sumber (tanpa / di akhir)'
+        required: true
+        default: 'folder_sumber'
+      tgt_repo:
+        description: 'Repo Tujuan (username/nama-repo)'
+        required: true
+        default: 'akun-ini/repo-tujuan'
+      tgt_branch:
+        description: 'Branch Tujuan'
+        required: true
+        default: 'target-branch'
+      tgt_folder:
+        description: 'Folder Tujuan (tanpa / di akhir)'
+        required: true
+        default: 'folder_tujuan'
+      clean_target:
+        description: 'Hapus isi folder tujuan dulu? (true/false)'
+        type: boolean
+        default: true
 
 jobs:
   sync:
@@ -15,21 +40,28 @@ jobs:
       - name: Checkout Sumber
         uses: actions/checkout@v4
         with:
+          repository: ${{ github.inputs.src_repo }}
+          ref: ${{ github.inputs.src_branch }}
           path: sumber
           fetch-depth: 0
 
       - name: Checkout Tujuan
         uses: actions/checkout@v4
         with:
-          repository: username-kamu/repo-tujuan  # ganti
-          ref: branch-tujuan                      # ganti
+          repository: ${{ github.inputs.tgt_repo }}
+          ref: ${{ github.inputs.tgt_branch }}
           token: ${{ secrets.PAT_SYNC }}
           path: tujuan
           fetch-depth: 0
 
-      - name: Salin & sinkron
+      - name: Bersihkan folder tujuan kalau dipilih
+        if: ${{ github.inputs.clean_target }}
         run: |
-          rsync -av --delete ./sumber/folder_sumber/ ./tujuan/folder_tujuan/
+          rm -rf ./tujuan/${{ github.inputs.tgt_folder }}/*
+
+      - name: Salin semua termasuk file/folder kosong
+        run: |
+          rsync -av --delete ./sumber/${{ github.inputs.src_folder }}/ ./tujuan/${{ github.inputs.tgt_folder }}/
 
       - name: Commit & Push
         working-directory: ./tujuan
@@ -37,4 +69,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --quiet && echo "Tidak ada perubahan" || (git commit -m "Sync folder: ${{ github.sha }}" && git push)
+          git diff --quiet && echo "✅ Tidak ada perubahan" || (git commit -m "Sync: ${{ github.inputs.src_repo }}:${{ github.inputs.src_folder }} → ${{ github.inputs.tgt_repo }}:${{ github.inputs.tgt_folder }}" && git push)
