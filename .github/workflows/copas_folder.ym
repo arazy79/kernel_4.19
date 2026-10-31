@@ -1,0 +1,78 @@
+name: Sync QCOM Power Driver
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Mode: sync = copy+replace folder, delete = hapus folder'
+        required: true
+        default: 'sync'
+        type: choice
+        options:
+          - sync
+          - delete
+      source_repo:
+        description: 'Source repo (owner/repo), wajib kalo mode=sync'
+        required: true
+        default: 'username/repo-sumber'
+      source_ref:
+        description: 'Source branch atau commit SHA'
+        required: true
+        default: 'main'
+      target_branch:
+        description: 'Branch repo lo yang mau di-update'
+        required: true
+        default: 'master'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo lo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.target_branch }}
+          fetch-depth: 1
+
+      - name: Fetch driver folder dari source repo
+        if: github.event.inputs.mode == 'sync'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.source_repo }}
+          ref: ${{ github.event.inputs.source_ref }}
+          path: _driver_src
+          sparse-checkout: |
+            drivers/power/supply/qcom
+          sparse-checkout-cone-mode: false
+          # kalo repo sumber PRIVATE, uncomment baris bawah + bikin PAT di Secrets:
+          # token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Sync (copy + replace) folder qcom
+        if: github.event.inputs.mode == 'sync'
+        run: |
+          rm -rf drivers/power/supply/qcom
+          cp -r _driver_src/drivers/power/supply/qcom drivers/power/supply/qcom
+          rm -rf _driver_src
+          echo "=== Isi folder setelah sync ==="
+          ls -la drivers/power/supply/qcom/
+
+      - name: Delete folder qcom
+        if: github.event.inputs.mode == 'delete'
+        run: |
+          rm -rf drivers/power/supply/qcom
+          echo "Folder drivers/power/supply/qcom dihapus."
+
+      - name: Commit & push ke repo lo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A drivers/power/supply/qcom
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan, skip commit."
+            exit 0
+          fi
+          git commit -m "[${{ github.event.inputs.mode }}] drivers/power/supply/qcom dari ${{ github.event.inputs.source_repo }}@${{ github.event.inputs.source_ref }}"
+          git push origin HEAD:${{ github.event.inputs.target_branch }}
