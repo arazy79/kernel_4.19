@@ -13,7 +13,7 @@ on:
         required: true
         default: 'fastcharge-test'
       src_folder:
-        description: 'Path Sumber (folder/file, tanpa / di akhir). Kosongkan = root repo.'
+        description: 'Path Sumber (kosong = root)'
         required: false
         default: 'drivers/gpu/msm'
       tgt_repo:
@@ -25,11 +25,11 @@ on:
         required: true
         default: 'a16xx'
       tgt_folder:
-        description: 'Path Tujuan (tanpa / di akhir). Kosongkan = root repo.'
+        description: 'Path Tujuan (kosong = root)'
         required: false
         default: 'drivers/gpu/msm'
       clean_target:
-        description: 'Mirror persis? (hapus file extra di target). true = mirror, false = copy/overwrite aja'
+        description: 'Mirror persis? (hapus file extra di target)'
         type: boolean
         default: true
 
@@ -37,6 +37,14 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Cek PAT
+        run: |
+          if [ -z "${{ secrets.PAT_SYNC }}" ]; then
+            echo "::error::PAT_SYNC kosong. Bikin di Settings → Secrets and variables → Actions, nama: PAT_SYNC"
+            exit 1
+          fi
+          echo "✅ PAT_SYNC kebaca"
+
       - name: Checkout Sumber
         uses: actions/checkout@v4
         with:
@@ -61,9 +69,7 @@ jobs:
       - name: Salin file (rsync)
         run: |
           DELETE_FLAG=""
-          if [ "${{ inputs.clean_target }}" = "true" ]; then
-            DELETE_FLAG="--delete"
-          fi
+          [ "${{ inputs.clean_target }}" = "true" ] && DELETE_FLAG="--delete"
           rsync -av $DELETE_FLAG \
             --exclude='.git' \
             "./sumber/${{ inputs.src_folder }}/" \
