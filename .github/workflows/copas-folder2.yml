@@ -7,27 +7,27 @@ on:
       src_repo:
         description: 'Repo Sumber (username/nama-repo)'
         required: true
-        default: 'akun-ini/repo-sumber'
+        default: 'arazy79/android-kernel-tes-4.19'
       src_branch:
         description: 'Branch Sumber'
         required: true
-        default: 'main'
+        default: 'fastcharge-test'
       src_folder:
         description: 'Path Sumber (folder/file, tanpa / di akhir). Kosongkan = root repo.'
         required: false
-        default: ''
+        default: 'drivers/gpu/msm'
       tgt_repo:
         description: 'Repo Tujuan (username/nama-repo)'
         required: true
-        default: 'akun-ini/repo-tujuan'
+        default: 'arazy79/kernel_4.19'
       tgt_branch:
-        description: 'Branch Tujuan'
+        description: 'a16xx'
         required: true
         default: 'target-branch'
       tgt_folder:
         description: 'Path Tujuan (tanpa / di akhir). Kosongkan = root repo.'
         required: false
-        default: ''
+        default: 'drivers/gpu/msm'
       clean_target:
         description: 'Mirror persis? (hapus file extra di target). true = mirror, false = copy/overwrite aja'
         type: boolean
