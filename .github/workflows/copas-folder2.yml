@@ -1,0 +1,54 @@
+name: COPAS FOLDER
+run-name: Sync dari ${{ github.repository }}@${{ github.ref_name }} → target
+
+on:
+  push:
+    branches: [ "main" ]  # ganti branch pemicu kamu
+    paths:
+      - 'folder_sumber/**' # hanya jalan kalau folder ini berubah
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # === 1. Checkout repo SUMBER ===
+      - name: Checkout Sumber
+        uses: actions/checkout@v4
+        with:
+          path: sumber
+          fetch-depth: 0
+
+      # === 2. Checkout repo TUJUAN (bisa beda repo + beda branch) ===
+      - name: Checkout Tujuan
+        uses: actions/checkout@v4
+        with:
+          repository: username-kamu/repo-tujuan  # ganti repo tujuan
+          ref: branch-tujuan                      # ganti branch tujuan
+          token: ${{ secrets.PAT_SYNC }}          # PAT harus punya akses push ke repo tujuan
+          path: tujuan
+          fetch-depth: 0
+
+      # === 3. Copy pakai rsync — FILE KOSONG & FOLDER KOSONG IKUT ===
+      - name: Salin & ganti isi folder
+        run: |
+          # Pilih salah satu opsi di bawah:
+
+          # --- OPSI A: PERSIS SAMA (hapus sisa lama, file kosong tetap ikut) ✅ REKOMENDASI
+          rsync -av --delete ./sumber/folder_sumber/ ./tujuan/folder_tujuan/
+
+          # --- OPSI B: Timpa saja, sisa file lama TETAP ADA (tidak disarankan)
+          # cp -r ./sumber/folder_sumber/* ./tujuan/folder_tujuan/
+
+          # ⚠️ CATATAN:
+          # - rsync -a = arsif → simpan hak akses, ikut file kosong & folder kosong
+          # - --delete = hapus di target yang tidak ada di sumber → isi persis sama
+          # - Garis miring di akhir `folder_sumber/` = isinya yang disalin, bukan foldernya
+
+      # === 4. Commit & Push ke repo tujuan ===
+      - name: Commit & Push
+        working-directory: ./tujuan
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --quiet && echo "Tidak ada perubahan" || (git commit -m "Sync folder: ${{ github.sha }}" && git push)
