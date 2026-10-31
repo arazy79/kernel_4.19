@@ -21,9 +21,9 @@ on:
         required: true
         default: 'arazy79/kernel_4.19'
       tgt_branch:
-        description: 'a16xx'
+        description: 'Branch Tujuan'
         required: true
-        default: 'target-branch'
+        default: 'a16xx'
       tgt_folder:
         description: 'Path Tujuan (tanpa / di akhir). Kosongkan = root repo.'
         required: false
