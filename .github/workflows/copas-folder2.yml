@@ -1,5 +1,5 @@
 name: Sync Folder Antar Repo
-run-name: Sync: ${{ github.input.src_repo }}@${{ github.input.src_branch }} → ${{ github.input.tgt_repo }}@${{ github.input.tgt_branch }}
+run-name: "Sync: ${{ github.event.inputs.src_repo }}@${{ github.event.inputs.src_branch }} → ${{ github.event.inputs.tgt_repo }}@${{ github.event.inputs.tgt_branch }}"
 
 on:
   workflow_dispatch:
@@ -13,9 +13,9 @@ on:
         required: true
         default: 'main'
       src_folder:
-        description: 'Folder Sumber (tanpa / di akhir)'
-        required: true
-        default: 'folder_sumber'
+        description: 'Path Sumber (folder/file, tanpa / di akhir). Kosongkan = root repo.'
+        required: false
+        default: ''
       tgt_repo:
         description: 'Repo Tujuan (username/nama-repo)'
         required: true
@@ -25,11 +25,11 @@ on:
         required: true
         default: 'target-branch'
       tgt_folder:
-        description: 'Folder Tujuan (tanpa / di akhir)'
-        required: true
-        default: 'folder_tujuan'
+        description: 'Path Tujuan (tanpa / di akhir). Kosongkan = root repo.'
+        required: false
+        default: ''
       clean_target:
-        description: 'Hapus isi folder tujuan dulu? (true/false)'
+        description: 'Mirror persis? (hapus file extra di target). true = mirror, false = copy/overwrite aja'
         type: boolean
         default: true
 
@@ -40,28 +40,34 @@ jobs:
       - name: Checkout Sumber
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.inputs.src_repo }}
-          ref: ${{ github.inputs.src_branch }}
+          repository: ${{ inputs.src_repo }}
+          ref: ${{ inputs.src_branch }}
+          token: ${{ secrets.PAT_SYNC }}
           path: sumber
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Checkout Tujuan
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.inputs.tgt_repo }}
-          ref: ${{ github.inputs.tgt_branch }}
+          repository: ${{ inputs.tgt_repo }}
+          ref: ${{ inputs.tgt_branch }}
           token: ${{ secrets.PAT_SYNC }}
           path: tujuan
           fetch-depth: 0
 
-      - name: Bersihkan folder tujuan kalau dipilih
-        if: ${{ github.inputs.clean_target }}
-        run: |
-          rm -rf ./tujuan/${{ github.inputs.tgt_folder }}/*
+      - name: Pastikan folder tujuan ada
+        run: mkdir -p "./tujuan/${{ inputs.tgt_folder }}"
 
-      - name: Salin semua termasuk file/folder kosong
+      - name: Salin file (rsync)
         run: |
-          rsync -av --delete ./sumber/${{ github.inputs.src_folder }}/ ./tujuan/${{ github.inputs.tgt_folder }}/
+          DELETE_FLAG=""
+          if [ "${{ inputs.clean_target }}" = "true" ]; then
+            DELETE_FLAG="--delete"
+          fi
+          rsync -av $DELETE_FLAG \
+            --exclude='.git' \
+            "./sumber/${{ inputs.src_folder }}/" \
+            "./tujuan/${{ inputs.tgt_folder }}/"
 
       - name: Commit & Push
         working-directory: ./tujuan
@@ -69,4 +75,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --quiet && echo "✅ Tidak ada perubahan" || (git commit -m "Sync: ${{ github.inputs.src_repo }}:${{ github.inputs.src_folder }} → ${{ github.inputs.tgt_repo }}:${{ github.inputs.tgt_folder }}" && git push)
+          if git diff --cached --quiet; then
+            echo "✅ Tidak ada perubahan"
+          else
+            git commit -m "Sync: ${{ inputs.src_repo }}:${{ inputs.src_folder }} → ${{ inputs.tgt_repo }}:${{ inputs.tgt_folder }}"
+            git push
+          fi
