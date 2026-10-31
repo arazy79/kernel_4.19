@@ -1,5 +1,4 @@
-name: Sync QCOM Power Driver
-
+name: Copas Folder
 on:
   workflow_dispatch:
     inputs:
