@@ -1315,8 +1315,6 @@ source "drivers/input/touchscreen/synaptics_dsx_X00TD/Kconfig"
 
 source "drivers/input/touchscreen/focaltech_touch/Kconfig"
 
-source "drivers/input/touchscreen/NVT_Touch_X01BD/Kconfig"
-
 config TOUCHSCREEN_HIMAX_CHIPSET
 	bool "Himax touchpanel CHIPSET"
 	depends on I2C
@@ -1326,8 +1324,6 @@ config TOUCHSCREEN_HIMAX_CHIPSET
 	  report 10 touches at a time.
 
           If unsure, say N.
-
-source "drivers/input/touchscreen/hxchipset_X01BD/Kconfig"
 
 source "drivers/input/touchscreen/NVT_Touch_X00TD/Kconfig"
 
