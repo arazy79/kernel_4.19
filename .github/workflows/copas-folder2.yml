@@ -11,8 +11,8 @@ on:
       source_branch:
         description: 'Source branch'
         required: true
-        default: 'main'
-        type: fastcharge-test
+        default: 'fastcharge-test'
+        type: string
       source_path:
         description: 'Folder sumber (kosong = seluruh repo)'
         required: false
