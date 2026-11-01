@@ -2325,6 +2325,7 @@ int smblib_set_prop_charging_enabled(struct smb_charger *chg,
 
 	/* vote 0mA when suspended */
 	rc = vote(chg->usb_icl_votable, USER_VOTER, !(bool)val->intval, 0);
+	vote(chg->chg_disable_votable, USER_VOTER, !val->intval, 0);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't vote to %s USB rc=%d\n",
 			(bool)val->intval ? "suspend" : "resume", rc);
@@ -3790,7 +3791,7 @@ void asus_batt_RTC_work(struct work_struct *dat)
 #define ICL_2850mA	0x72
 #define ICL_3000mA	0x78
 #define ICL_4000mA	0xF8
-#define ASUS_MONITOR_CYCLE		60000
+#define ASUS_MONITOR_CYCLE		15000
 #define TITAN_750K_MIN	675
 #define TITAN_750K_MAX	851
 #define TITAN_200K_MIN	306
