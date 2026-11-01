@@ -1,0 +1,144 @@
+name: Kernel Folder Build Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_repo:
+        description: 'Repo kernel (owner/repo)'
+        required: true
+        default: 'arazy79/kernel_4.19'
+        type: string
+      kernel_branch:
+        description: 'Branch kernel'
+        required: true
+        default: 'a16xx'
+        type: string
+      defconfig:
+        description: 'Nama defconfig (sesuaikan sama punya lu)'
+        required: true
+        default: 'asus/X00TD_defconfig'
+        type: string
+      build_path:
+        description: 'Folder yang mau di-compile (pakai slash di akhir)'
+        required: true
+        default: 'drivers/gpu/msm/'
+        type: string
+      clang_version:
+        description: 'Versi clang dari apt'
+        required: true
+        default: '17'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install toolchain
+        env:
+          CV: ${{ inputs.clang_version }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-$CV lld-$CV llvm-$CV \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            bc bison flex libssl-dev libelf-dev make ccache python3
+
+      - name: Clone kernel
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          KREPO: ${{ inputs.kernel_repo }}
+          KBRANCH: ${{ inputs.kernel_branch }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$KBRANCH" \
+            "https://x-access-token:${GH_TOKEN}@github.com/${KREPO}.git" kernel
+
+      - name: Build folder (make -k)
+        id: build
+        working-directory: kernel
+        env:
+          DEFCONFIG: ${{ inputs.defconfig }}
+          BPATH: ${{ inputs.build_path }}
+          CV: ${{ inputs.clang_version }}
+        run: |
+          set +e
+          export ARCH=arm64
+          export SUBARCH=arm64
+
+          MK="make O=out ARCH=arm64 \
+            CC=clang-$CV LD=ld.lld-$CV AR=llvm-ar-$CV NM=llvm-nm-$CV \
+            OBJCOPY=llvm-objcopy-$CV OBJDUMP=llvm-objdump-$CV \
+            STRIP=llvm-strip-$CV READELF=llvm-readelf-$CV \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+
+          echo "== defconfig: $DEFCONFIG"
+          $MK "$DEFCONFIG" > ../defconfig.log 2>&1 || { cat ../defconfig.log; echo "rc=99" >> "$GITHUB_OUTPUT"; exit 0; }
+
+          echo "== prepare"
+          $MK prepare > ../prepare.log 2>&1 || { tail -n 50 ../prepare.log; echo "rc=98" >> "$GITHUB_OUTPUT"; exit 0; }
+
+          echo "== build $BPATH"
+          $MK -k -j"$(nproc)" "$BPATH" 2>&1 | tee ../build.log
+          RC=${PIPESTATUS[0]}
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Ringkasan error
+        if: always()
+        env:
+          RC: ${{ steps.build.outputs.rc }}
+          BPATH: ${{ inputs.build_path }}
+        run: |
+          {
+            echo "## Hasil compile \`$BPATH\`"
+            echo ""
+            echo "Exit code make: \`${RC:-unknown}\`"
+            echo ""
+            if [ "${RC:-}" = "99" ]; then
+              echo "defconfig gagal. Cek nama defconfig, lihat artifact defconfig.log"
+            elif [ "${RC:-}" = "98" ]; then
+              echo "make prepare gagal. Lihat artifact prepare.log"
+            elif [ -f build.log ]; then
+              echo "### Error unik (jumlah x pesan)"
+              echo '```'
+              grep -E ': error:' build.log | sed -E 's/.*error: //' | sort | uniq -c | sort -rn | head -n 40
+              echo '```'
+              echo ""
+              echo "### Error per file"
+              echo '```'
+              grep -E ': error:' build.log | cut -d: -f1 | sort | uniq -c | sort -rn | head -n 40
+              echo '```'
+              echo ""
+              echo "### Error paling hulu (biasanya penyebab, bukan efek)"
+              echo '```'
+              grep -E 'implicit declaration|unknown type name|has no member named|undeclared|file not found' build.log | sed -E 's/^[^ ]*: //' | sort | uniq -c | sort -rn | head -n 30
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build.log
+            defconfig.log
+            prepare.log
+          if-no-files-found: ignore
+
+      - name: Fail kalau make gagal
+        if: always()
+        env:
+          RC: ${{ steps.build.outputs.rc }}
+        run: |
+          if [ "${RC:-1}" != "0" ]; then
+            echo "::error::Build folder gagal (rc=${RC:-unknown}), lihat summary dan artifact build-logs"
+            exit 1
+          fi
