@@ -104,7 +104,7 @@ static int alarmtimer_rtc_add_device(struct device *dev,
 
 	__ws = wakeup_source_register(dev, "alarmtimer");
 	pdev = platform_device_register_data(dev, "alarmtimer",
-					     PLATFORM_DEVID_AUTO, NULL, 0);
+				     PLATFORM_DEVID_NONE, NULL, 0);
 
 	spin_lock_irqsave(&rtcdev_lock, flags);
 	if (__ws && !IS_ERR(pdev) && !rtcdev) {
