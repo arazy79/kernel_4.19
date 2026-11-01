@@ -29,7 +29,8 @@ int gf_parse_dts(struct gf_dev *gf_dev)
 	gf_dev->vdd_gpio = of_get_named_gpio(np, "goodix,gpio_vdd", 0);
 	if (gf_dev->vdd_gpio < 0) {
 		pr_err("falied to get vdd gpio!\n");
-		return gf_dev->vdd_gpio;
+		rc = gf_dev->vdd_gpio;
+		goto err_vdd;
 	}
 	rc = devm_gpio_request(dev, gf_dev->vdd_gpio, "goodix_vdd");
 	if (rc) {
@@ -41,7 +42,8 @@ int gf_parse_dts(struct gf_dev *gf_dev)
 	gf_dev->reset_gpio = of_get_named_gpio(np, "goodix,reset_gpio", 0);
 	if (gf_dev->reset_gpio < 0) {
 		pr_err("falied to get reset gpio!\n");
-		return gf_dev->reset_gpio;
+		rc = gf_dev->reset_gpio;
+		goto err_reset;
 	}
 
 	rc = devm_gpio_request(dev, gf_dev->reset_gpio, "goodix_reset");
@@ -54,7 +56,8 @@ int gf_parse_dts(struct gf_dev *gf_dev)
 	gf_dev->irq_gpio = of_get_named_gpio(np, "goodix,irq_gpio", 0);
 	if (gf_dev->irq_gpio < 0) {
 		pr_err("falied to get irq gpio!\n");
-		return gf_dev->irq_gpio;
+		rc = gf_dev->irq_gpio;
+		goto err_irq;
 	}
 
 	rc = devm_gpio_request(dev, gf_dev->irq_gpio, "goodix_irq");
@@ -64,25 +67,41 @@ int gf_parse_dts(struct gf_dev *gf_dev)
 	}
 	gpio_direction_input(gf_dev->irq_gpio);
 
+	return 0;
+
 err_irq:
+	gf_dev->irq_gpio = -EINVAL;
 	devm_gpio_free(dev, gf_dev->reset_gpio);
 err_reset:
+	gf_dev->reset_gpio = -EINVAL;
 	devm_gpio_free(dev, gf_dev->vdd_gpio);
 err_vdd:
+	gf_dev->vdd_gpio = -EINVAL;
 	return rc;
 }
 
 void gf_cleanup(struct gf_dev *gf_dev)
 {
+	struct device *dev = &gf_dev->spi->dev;
+
 	pr_info("[info] %s\n", __func__);
 
+	/* GPIOs are devm-requested and invalidated once freed, so this is
+	 * safe to call more than once. */
 	if (gpio_is_valid(gf_dev->irq_gpio)) {
-		gpio_free(gf_dev->irq_gpio);
+		devm_gpio_free(dev, gf_dev->irq_gpio);
+		gf_dev->irq_gpio = -EINVAL;
 		pr_info("remove irq_gpio success\n");
 	}
 	if (gpio_is_valid(gf_dev->reset_gpio)) {
-		gpio_free(gf_dev->reset_gpio);
+		devm_gpio_free(dev, gf_dev->reset_gpio);
+		gf_dev->reset_gpio = -EINVAL;
 		pr_info("remove reset_gpio success\n");
+	}
+	if (gpio_is_valid(gf_dev->vdd_gpio)) {
+		devm_gpio_free(dev, gf_dev->vdd_gpio);
+		gf_dev->vdd_gpio = -EINVAL;
+		pr_info("remove vdd_gpio success\n");
 	}
 }
 
@@ -111,6 +130,8 @@ int gf_hw_reset(struct gf_dev *gf_dev, unsigned int delay_ms)
 		pr_info("Input buff is NULL.\n");
 		return ret;
 	}
+	if (!gpio_is_valid(gf_dev->reset_gpio))
+		return -ENODEV;
 	gpio_direction_output(gf_dev->reset_gpio, 1);
 	gpio_set_value(gf_dev->reset_gpio, 0);
 	mdelay(3);

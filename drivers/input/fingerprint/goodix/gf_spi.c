@@ -93,6 +93,9 @@ static struct gf_key_map maps[] = {
 
 static void gf_enable_irq(struct gf_dev *gf_dev)
 {
+	if (!gf_dev->irq_requested)
+		return;
+
 	if (gf_dev->irq_enabled) {
 		pr_warn("IRQ has been enabled.\n");
 	} else {
@@ -103,6 +106,9 @@ static void gf_enable_irq(struct gf_dev *gf_dev)
 
 static void gf_disable_irq(struct gf_dev *gf_dev)
 {
+	if (!gf_dev->irq_requested)
+		return;
+
 	if (gf_dev->irq_enabled) {
 		gf_dev->irq_enabled = 0;
 		disable_irq(gf_dev->irq);
@@ -345,14 +351,18 @@ static int irq_setup(struct gf_dev *gf_dev)
 	}
 	enable_irq_wake(gf_dev->irq);
 	gf_dev->irq_enabled = 1;
+	gf_dev->irq_requested = 1;
 
 	return status;
 }
 
 static void irq_cleanup(struct gf_dev *gf_dev)
 {
+	if (!gf_dev->irq_requested)
+		return;
+
+	gf_dev->irq_requested = 0;
 	gf_dev->irq_enabled = 0;
-	disable_irq(gf_dev->irq);
 	disable_irq_wake(gf_dev->irq);
 	free_irq(gf_dev->irq, gf_dev);
 }
@@ -573,6 +583,9 @@ static int gf_open(struct inode *inode, struct file *filp)
 err_irq:
 	gf_cleanup(gf_dev);
 err_parse_dt:
+	gf_dev->users--;
+	filp->private_data = NULL;
+	mutex_unlock(&device_list_lock);
 	return status;
 }
 
@@ -871,13 +884,14 @@ static int __init gf_init(void)
 		class_destroy(gf_class);
 		unregister_chrdev(SPIDEV_MAJOR, gf_driver.driver.name);
 		pr_warn("Failed to register SPI driver.\n");
+		return status;
 	}
 
 #ifdef GF_NETLINK_ENABLE
 	netlink_init();
 #endif
 	pr_info("status = 0x%x\n", status);
-	return 0;
+	return status;
 }
 module_init(gf_init);
 
