@@ -125,6 +125,7 @@ static int alarmtimer_rtc_add_device(struct device *dev,
 unlock:
 	spin_unlock_irqrestore(&rtcdev_lock, flags);
 
+	if (!IS_ERR_OR_NULL(pdev))
 	platform_device_unregister(pdev);
 	wakeup_source_unregister(__ws);
 
