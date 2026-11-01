@@ -33,8 +33,13 @@ on:
         required: false
         default: 'drivers/gpu/msm'
         type: string
+      file_list:
+        description: 'OPSIONAL: daftar file/folder (spasi/koma), path sama di source & target. Kalau diisi, source_path/target_path diabaikan'
+        required: false
+        default: ''
+        type: string
       clean_target:
-        description: 'Hapus file di target yang tidak ada di source (mirror)'
+        description: 'Hapus file di target yang tidak ada di source (mirror, hanya untuk folder)'
         required: false
         default: false
         type: boolean
@@ -60,6 +65,7 @@ jobs:
           DST_REPO: ${{ inputs.target_repo }}
           DST_BRANCH: ${{ inputs.target_branch }}
           DST_PATH: ${{ inputs.target_path }}
+          FILE_LIST: ${{ inputs.file_list }}
           CLEAN: ${{ inputs.clean_target }}
           MSG: ${{ inputs.commit_message }}
         run: |
@@ -68,21 +74,8 @@ jobs:
           SRC_URL="https://x-access-token:${GH_TOKEN}@github.com/${SRC_REPO}.git"
           DST_URL="https://x-access-token:${GH_TOKEN}@github.com/${DST_REPO}.git"
 
-          # Rapikan path (buang ./ dan slash di awal/akhir)
-          SRC_PATH="${SRC_PATH#./}"; SRC_PATH="${SRC_PATH#/}"; SRC_PATH="${SRC_PATH%/}"
-          DST_PATH="${DST_PATH#./}"; DST_PATH="${DST_PATH#/}"; DST_PATH="${DST_PATH%/}"
-          [ "$SRC_PATH" = "." ] && SRC_PATH=""
-          [ "$DST_PATH" = "." ] && DST_PATH=""
-
           echo "== Clone source: ${SRC_REPO}@${SRC_BRANCH}"
           git clone --depth 1 --branch "$SRC_BRANCH" "$SRC_URL" /tmp/src
-
-          FROM="/tmp/src"
-          [ -n "$SRC_PATH" ] && FROM="/tmp/src/$SRC_PATH"
-          if [ ! -d "$FROM" ]; then
-            echo "::error::Folder sumber '${SRC_PATH}' tidak ditemukan di ${SRC_REPO}@${SRC_BRANCH}"
-            exit 1
-          fi
 
           echo "== Clone target: ${DST_REPO}@${DST_BRANCH}"
           if git ls-remote --exit-code --heads "$DST_URL" "$DST_BRANCH" >/dev/null 2>&1; then
@@ -93,15 +86,56 @@ jobs:
             git -C /tmp/dst checkout -b "$DST_BRANCH"
           fi
 
-          TO="/tmp/dst"
-          [ -n "$DST_PATH" ] && TO="/tmp/dst/$DST_PATH"
-          mkdir -p "$TO"
+          FILE_LIST="${FILE_LIST//,/ }"
 
-          echo "== Copy ${SRC_PATH:-<root>} -> ${DST_PATH:-<root>}"
-          if [ "$CLEAN" = "true" ]; then
-            rsync -a --delete --exclude='.git' "$FROM"/ "$TO"/
+          if [ -n "${FILE_LIST// /}" ]; then
+            # ===== Mode daftar file/folder (path sama di source dan target) =====
+            echo "== Mode daftar: ${FILE_LIST}"
+            for F in $FILE_LIST; do
+              F="${F#./}"; F="${F#/}"; F="${F%/}"
+              if [ ! -e "/tmp/src/$F" ]; then
+                echo "::error::'${F}' tidak ditemukan di ${SRC_REPO}@${SRC_BRANCH}"
+                exit 1
+              fi
+              if [ -d "/tmp/src/$F" ]; then
+                mkdir -p "/tmp/dst/$F"
+                if [ "$CLEAN" = "true" ]; then
+                  rsync -a --delete --exclude='.git' "/tmp/src/$F"/ "/tmp/dst/$F"/
+                else
+                  rsync -a --exclude='.git' "/tmp/src/$F"/ "/tmp/dst/$F"/
+                fi
+                echo "folder: $F"
+              else
+                mkdir -p "$(dirname "/tmp/dst/$F")"
+                cp -f "/tmp/src/$F" "/tmp/dst/$F"
+                echo "file:   $F"
+              fi
+            done
           else
-            rsync -a --exclude='.git' "$FROM"/ "$TO"/
+            # ===== Mode folder tunggal (source_path -> target_path) =====
+            # Rapikan path (buang ./ dan slash di awal/akhir)
+            SRC_PATH="${SRC_PATH#./}"; SRC_PATH="${SRC_PATH#/}"; SRC_PATH="${SRC_PATH%/}"
+            DST_PATH="${DST_PATH#./}"; DST_PATH="${DST_PATH#/}"; DST_PATH="${DST_PATH%/}"
+            [ "$SRC_PATH" = "." ] && SRC_PATH=""
+            [ "$DST_PATH" = "." ] && DST_PATH=""
+
+            FROM="/tmp/src"
+            [ -n "$SRC_PATH" ] && FROM="/tmp/src/$SRC_PATH"
+            if [ ! -d "$FROM" ]; then
+              echo "::error::Folder sumber '${SRC_PATH}' tidak ditemukan di ${SRC_REPO}@${SRC_BRANCH}"
+              exit 1
+            fi
+
+            TO="/tmp/dst"
+            [ -n "$DST_PATH" ] && TO="/tmp/dst/$DST_PATH"
+            mkdir -p "$TO"
+
+            echo "== Copy ${SRC_PATH:-<root>} -> ${DST_PATH:-<root>}"
+            if [ "$CLEAN" = "true" ]; then
+              rsync -a --delete --exclude='.git' "$FROM"/ "$TO"/
+            else
+              rsync -a --exclude='.git' "$FROM"/ "$TO"/
+            fi
           fi
 
           cd /tmp/dst
