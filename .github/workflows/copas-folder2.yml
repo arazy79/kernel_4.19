@@ -6,30 +6,32 @@ on:
       source_repo:
         description: 'Source repo (owner/repo)'
         required: true
+        default: 'android-kernel-tes-4.19'
         type: string
       source_branch:
         description: 'Source branch'
         required: true
         default: 'main'
-        type: string
+        type: fastcharge-test
       source_path:
         description: 'Folder sumber (kosong = seluruh repo)'
         required: false
-        default: ''
+        default: 'drivers/gpu/msm'
         type: string
       target_repo:
         description: 'Target repo (owner/repo)'
         required: true
+        default: 'arazy79/kernel_4.19'
         type: string
       target_branch:
         description: 'Target branch (dibuat otomatis kalau belum ada)'
         required: true
-        default: 'main'
+        default: 'a16xx'
         type: string
       target_path:
         description: 'Folder tujuan (kosong = root repo)'
         required: false
-        default: ''
+        default: 'drivers/gpu/msm'
         type: string
       clean_target:
         description: 'Hapus file di target yang tidak ada di source (mirror)'
