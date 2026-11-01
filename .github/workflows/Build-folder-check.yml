@@ -14,14 +14,14 @@ on:
         default: 'a16xx'
         type: string
       defconfig:
-        description: 'Nama defconfig (sesuaikan sama punya lu)'
+        description: 'Defconfig relatif ke arch/arm64/configs/ (prefix arch/arm64/configs/ otomatis dibuang)'
         required: true
-        default: 'arch/arm64/configs/vendor/asus/X00TD_defconfig'
+        default: 'vendor/asus/X00TD_defconfig'
         type: string
-      build_path:
-        description: 'Folder yang mau di-compile (pakai slash di akhir)'
+      build_paths:
+        description: 'Folder yang di-compile, pisah pakai spasi atau koma'
         required: true
-        default: 'drivers/gpu/msm/'
+        default: 'kernel/power/ drivers/cpuidle/ drivers/gpu/msm/ drivers/char/ drivers/video/fbdev/msm/ drivers/mmc/host/'
         type: string
       clang_version:
         description: 'Versi clang dari apt'
@@ -57,17 +57,21 @@ jobs:
           git clone --depth 1 --branch "$KBRANCH" \
             "https://x-access-token:${GH_TOKEN}@github.com/${KREPO}.git" kernel
 
-      - name: Build folder (make -k)
+      - name: Build folders (make -k)
         id: build
         working-directory: kernel
         env:
           DEFCONFIG: ${{ inputs.defconfig }}
-          BPATH: ${{ inputs.build_path }}
+          BPATHS: ${{ inputs.build_paths }}
           CV: ${{ inputs.clang_version }}
         run: |
           set +e
-          export ARCH=arm64
-          export SUBARCH=arm64
+          mkdir -p ../logs
+          : > ../logs/results.txt
+
+          # make nyari defconfig relatif ke arch/arm64/configs/, jadi prefix itu dibuang kalau ikut ditulis
+          DEFCONFIG="${DEFCONFIG#./}"
+          DEFCONFIG="${DEFCONFIG#arch/arm64/configs/}"
 
           MK="make O=out ARCH=arm64 \
             CC=clang-$CV LD=ld.lld-$CV AR=llvm-ar-$CV NM=llvm-nm-$CV \
@@ -78,67 +82,95 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
 
           echo "== defconfig: $DEFCONFIG"
-          $MK "$DEFCONFIG" > ../defconfig.log 2>&1 || { cat ../defconfig.log; echo "rc=99" >> "$GITHUB_OUTPUT"; exit 0; }
+          $MK "$DEFCONFIG" > ../logs/defconfig.log 2>&1
+          if [ $? -ne 0 ]; then
+            tail -n 40 ../logs/defconfig.log
+            echo "setup=defconfig" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           echo "== prepare"
-          $MK prepare > ../prepare.log 2>&1 || { tail -n 50 ../prepare.log; echo "rc=98" >> "$GITHUB_OUTPUT"; exit 0; }
+          $MK prepare > ../logs/prepare.log 2>&1
+          if [ $? -ne 0 ]; then
+            tail -n 40 ../logs/prepare.log
+            echo "setup=prepare" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "setup=ok" >> "$GITHUB_OUTPUT"
 
-          echo "== build $BPATH"
-          $MK -k -j"$(nproc)" "$BPATH" 2>&1 | tee ../build.log
-          RC=${PIPESTATUS[0]}
-          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+          OVERALL=0
+          for P in $(echo "$BPATHS" | tr ',' ' '); do
+            P="${P#./}"; P="${P#/}"; P="${P%/}/"
+            SLUG=$(echo "$P" | tr '/' '_')
+            LOG="logs/build_${SLUG}log"
+            echo "== build $P"
+            $MK -k -j"$(nproc)" "$P" 2>&1 | tee "../$LOG"
+            RC=${PIPESTATUS[0]}
+            echo "${P}|${RC}|${LOG}" >> ../logs/results.txt
+            [ "$RC" -ne 0 ] && OVERALL=1
+          done
+          echo "overall=$OVERALL" >> "$GITHUB_OUTPUT"
           exit 0
 
       - name: Ringkasan error
         if: always()
         env:
-          RC: ${{ steps.build.outputs.rc }}
-          BPATH: ${{ inputs.build_path }}
+          SETUP: ${{ steps.build.outputs.setup }}
         run: |
           {
-            echo "## Hasil compile \`$BPATH\`"
+            echo "# Hasil compile folder"
             echo ""
-            echo "Exit code make: \`${RC:-unknown}\`"
-            echo ""
-            if [ "${RC:-}" = "99" ]; then
-              echo "defconfig gagal. Cek nama defconfig, lihat artifact defconfig.log"
-            elif [ "${RC:-}" = "98" ]; then
-              echo "make prepare gagal. Lihat artifact prepare.log"
-            elif [ -f build.log ]; then
-              echo "### Error unik (jumlah x pesan)"
-              echo '```'
-              grep -E ': error:' build.log | sed -E 's/.*error: //' | sort | uniq -c | sort -rn | head -n 40
-              echo '```'
-              echo ""
-              echo "### Error per file"
-              echo '```'
-              grep -E ': error:' build.log | cut -d: -f1 | sort | uniq -c | sort -rn | head -n 40
-              echo '```'
-              echo ""
-              echo "### Error paling hulu (biasanya penyebab, bukan efek)"
-              echo '```'
-              grep -E 'implicit declaration|unknown type name|has no member named|undeclared|file not found' build.log | sed -E 's/^[^ ]*: //' | sort | uniq -c | sort -rn | head -n 30
-              echo '```'
+            if [ "${SETUP:-}" = "defconfig" ]; then
+              echo "defconfig gagal. Cek nama defconfig, lihat artifact logs/defconfig.log"
+              exit 0
+            elif [ "${SETUP:-}" = "prepare" ]; then
+              echo "make prepare gagal. Lihat artifact logs/prepare.log"
+              exit 0
             fi
+
+            echo "| Folder | Exit code | Jumlah error |"
+            echo "|---|---|---|"
+            while IFS='|' read -r P RC LOG; do
+              N=$(grep -c ': error:' "$LOG" || true)
+              echo "| \`$P\` | $RC | $N |"
+            done < logs/results.txt
+            echo ""
+
+            while IFS='|' read -r P RC LOG; do
+              [ "$RC" = "0" ] && continue
+              echo "## \`$P\`"
+              echo ""
+              echo "Error unik (jumlah x pesan):"
+              echo '```'
+              grep -E ': error:' "$LOG" | sed -E 's/.*error: //' | sort | uniq -c | sort -rn | head -n 30
+              echo '```'
+              echo "Error per file:"
+              echo '```'
+              grep -E ': error:' "$LOG" | cut -d: -f1 | sort | uniq -c | sort -rn | head -n 30
+              echo '```'
+              echo "Paling hulu (biasanya penyebab, bukan efek):"
+              echo '```'
+              grep -E 'implicit declaration|unknown type name|has no member named|undeclared|file not found' "$LOG" | sed -E 's/^[^ ]*: //' | sort | uniq -c | sort -rn | head -n 20
+              echo '```'
+              echo ""
+            done < logs/results.txt
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload log
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-logs
-          path: |
-            build.log
-            defconfig.log
-            prepare.log
+          path: logs/
           if-no-files-found: ignore
 
-      - name: Fail kalau make gagal
+      - name: Fail kalau ada folder gagal
         if: always()
         env:
-          RC: ${{ steps.build.outputs.rc }}
+          SETUP: ${{ steps.build.outputs.setup }}
+          OVERALL: ${{ steps.build.outputs.overall }}
         run: |
-          if [ "${RC:-1}" != "0" ]; then
-            echo "::error::Build folder gagal (rc=${RC:-unknown}), lihat summary dan artifact build-logs"
+          if [ "${SETUP:-}" != "ok" ] || [ "${OVERALL:-1}" != "0" ]; then
+            echo "::error::Ada folder yang gagal compile atau setup gagal, lihat summary dan artifact build-logs"
             exit 1
           fi
