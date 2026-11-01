@@ -6,7 +6,7 @@ on:
       source_repo:
         description: 'Source repo (owner/repo)'
         required: true
-        default: 'android-kernel-tes-4.19'
+        default: 'arazy79/android-kernel-tes-4.19'
         type: string
       source_branch:
         description: 'Source branch'
