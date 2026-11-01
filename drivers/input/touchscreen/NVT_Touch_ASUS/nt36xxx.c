@@ -241,7 +241,7 @@ const uint16_t sgesture_key_array[] = {
 // Use for DT2W
 static int allow_dclick = 1;
 // Use for gesture actions
-static int allow_gesture = 1;
+static int allow_gesture = 0;
 
 #define DT2W_NODE dclicknode
 #define GESTURE_NODE gesture_node
