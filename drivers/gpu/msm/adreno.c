@@ -1482,15 +1482,20 @@ static int adreno_probe(struct platform_device *pdev)
 	adreno_update_soc_hw_revision_quirks(adreno_dev, pdev);
 
 	status = adreno_probe_efuse(pdev, adreno_dev);
-	if (status)
+	if (status) {
+		adreno_efuse_unmap(adreno_dev);
 		return status;
+	}
 
 	/* Get the chip ID from the DT and set up target specific parameters */
-	if (adreno_identify_gpu(adreno_dev))
+	if (adreno_identify_gpu(adreno_dev)) {
+		adreno_efuse_unmap(adreno_dev);
 		return -ENODEV;
+	}
 
 	status = adreno_of_get_power(adreno_dev, pdev);
 	if (status) {
+		adreno_efuse_unmap(adreno_dev);
 		device->pdev = NULL;
 		return status;
 	}
@@ -1502,6 +1507,7 @@ static int adreno_probe(struct platform_device *pdev)
 	 */
 	status = gmu_core_probe(device);
 	if (status) {
+		adreno_efuse_unmap(adreno_dev);
 		device->pdev = NULL;
 		return status;
 	}
@@ -1529,6 +1535,8 @@ static int adreno_probe(struct platform_device *pdev)
 
 	status = kgsl_device_platform_probe(device);
 	if (status) {
+		gmu_core_remove(device);
+		adreno_efuse_unmap(adreno_dev);
 		device->pdev = NULL;
 		return status;
 	}
@@ -1623,6 +1631,8 @@ out:
 		adreno_ringbuffer_close(adreno_dev);
 		kgsl_free_global(device, &device->memstore);
 		kgsl_device_platform_remove(device);
+		gmu_core_remove(device);
+		adreno_efuse_unmap(adreno_dev);
 		device->pdev = NULL;
 	}
 
@@ -1731,10 +1741,11 @@ static void adreno_fault_detect_init(struct adreno_device *adreno_dev)
 	adreno_ft_regs_num = (ARRAY_SIZE(adreno_ft_regs_default) +
 		gpudev->ft_perf_counters_count*2);
 
-	adreno_ft_regs = kcalloc(adreno_ft_regs_num, sizeof(unsigned int),
-		GFP_KERNEL);
-	adreno_ft_regs_val = kcalloc(adreno_ft_regs_num, sizeof(unsigned int),
-		GFP_KERNEL);
+	/* These globals persist until remove(); allocate only once */
+	if (adreno_ft_regs == NULL)
+		adreno_ft_regs = kcalloc(adreno_ft_regs_num, sizeof(unsigned int), GFP_KERNEL);
+	if (adreno_ft_regs_val == NULL)
+		adreno_ft_regs_val = kcalloc(adreno_ft_regs_num, sizeof(unsigned int), GFP_KERNEL);
 
 	if (adreno_ft_regs == NULL || adreno_ft_regs_val == NULL) {
 		kfree(adreno_ft_regs);
