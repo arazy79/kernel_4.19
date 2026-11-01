@@ -16,7 +16,7 @@ on:
       defconfig:
         description: 'Nama defconfig (sesuaikan sama punya lu)'
         required: true
-        default: 'asus/X00TD_defconfig'
+        default: 'arch/arm64/configs/vendor/asus/X00TD_defconfig'
         type: string
       build_path:
         description: 'Folder yang mau di-compile (pakai slash di akhir)'
