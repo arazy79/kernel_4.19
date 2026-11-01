@@ -1241,7 +1241,6 @@ static void process_udata_work(struct work_struct *work)
 	struct qpnp_qg *chip = container_of(work,
 			struct qpnp_qg, udata_work);
 	int rc;
-
 	int cc_soc_delta = chip->udata.param[QG_CC_SOC].data - QG_SOC_FULL;
 	bool input_present = is_input_present(chip);
 
@@ -4789,7 +4788,7 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 	chip->batt_age_level = -EINVAL;
 	chip->qg_charge_counter = -EINVAL;
 
-	chip->qg_version = (u8)of_device_get_match_data(&pdev->dev);
+	chip->qg_version = (enum qg_version)of_device_get_match_data(&pdev->dev);
 
 	switch (chip->qg_version) {
 	case QG_LITE:

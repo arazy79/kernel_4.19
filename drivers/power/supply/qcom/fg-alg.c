@@ -543,7 +543,7 @@ static int cap_learning_done(struct cap_learning *cl, int batt_soc_cp)
 
 	if (cl->cl_skip == true)
 		return -ENODATA;
-	
+
 	rc = cap_learning_process_full_data(cl, batt_soc_cp);
 	if (rc < 0) {
 		pr_debug("Error in processing cap learning full data, rc=%d\n",
@@ -633,7 +633,7 @@ void cap_learning_update(struct cap_learning *cl, int batt_temp,
 		if (charge_status == POWER_SUPPLY_STATUS_CHARGING) {
 			rc = cap_learning_begin(cl, batt_soc_cp);
 			cl->active = (rc == 0);
-	if (cl->active)
+			if (cl->active)
 				cl->cl_skip = false;
 		} else {
 			if (charge_status == POWER_SUPPLY_STATUS_DISCHARGING ||

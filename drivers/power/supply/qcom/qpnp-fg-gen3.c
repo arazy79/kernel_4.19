@@ -611,8 +611,11 @@ static int fg_get_battery_temp(struct fg_dev *fg, int *val)
 
 	temp = ((buf[1] & BATT_TEMP_MSB_MASK) << 8) |
 		(buf[0] & BATT_TEMP_LSB_MASK);
-	/* Value is in 0.25Kelvin; Convert it to deciDegC */
-	*val = DIV_ROUND_CLOSEST((temp - 273*4) * 10, 4);
+	temp = DIV_ROUND_CLOSEST(temp, 4);
+
+	/* Value is in Kelvin; Convert it to deciDegC */
+	temp = (temp - 273) * 10;
+	*val = temp;
 	return 0;
 }
 
@@ -959,7 +962,7 @@ static int fg_awake_cb(struct votable *votable, void *data, int awake,
 	struct fg_dev *fg = data;
 
 	if (awake)
-		pm_wakeup_event(fg->dev, 500);
+		pm_stay_awake(fg->dev);
 	else
 		pm_relax(fg->dev);
 
@@ -1546,9 +1549,7 @@ static int fg_charge_full_update(struct fg_dev *fg)
 		msoc, bsoc, fg->health, fg->charge_status,
 		fg->charge_full);
 	if (fg->charge_done && !fg->charge_full) {
-		if (msoc >= 99 && (fg->health == POWER_SUPPLY_HEALTH_GOOD
-				|| fg->health == POWER_SUPPLY_HEALTH_COOL
-				|| fg->health == POWER_SUPPLY_HEALTH_WARM)) {
+		if (msoc >= 99 && fg->health == POWER_SUPPLY_HEALTH_GOOD) {
 			fg_dbg(fg, FG_STATUS, "Setting charge_full to true\n");
 			fg->charge_full = true;
 			/*
@@ -1566,12 +1567,8 @@ static int fg_charge_full_update(struct fg_dev *fg)
 			fg_dbg(fg, FG_STATUS, "Terminated charging @ SOC%d\n",
 				msoc);
 		}
-#ifdef CONFIG_MACH_ASUS_SDM660
-	} else if ((msoc_raw <= recharge_soc || !fg->charge_done) && fg->charge_full) {
-#else
 	} else if ((msoc_raw <= recharge_soc || !fg->charge_done)
 			&& fg->charge_full) {
-#endif
 		if (chip->dt.linearize_soc) {
 			fg->delta_soc = FULL_CAPACITY - msoc;
 
@@ -4428,7 +4425,6 @@ static int fg_hw_init(struct fg_dev *fg)
 	return 0;
 }
 
-#ifndef CONFIG_MACH_ASUS_SDM660
 static int fg_adjust_timebase(struct fg_dev *fg)
 {
 	struct fg_gen3_chip *chip = container_of(fg, struct fg_gen3_chip, fg);
@@ -4463,7 +4459,6 @@ static int fg_adjust_timebase(struct fg_dev *fg)
 
 	return 0;
 }
-#endif
 
 /* INTERRUPT HANDLERS STAY HERE */
 
@@ -4576,11 +4571,9 @@ static irqreturn_t fg_delta_batt_temp_irq_handler(int irq, void *data)
 	fg->health = prop.intval;
 
 	if (fg->last_batt_temp != batt_temp) {
-#ifndef CONFIG_MACH_ASUS_SDM660
 		rc = fg_adjust_timebase(fg);
 		if (rc < 0)
 			pr_err("Error in adjusting timebase, rc=%d\n", rc);
-#endif
 
 		rc = fg_adjust_recharge_voltage(fg);
 		if (rc < 0)
@@ -4656,11 +4649,9 @@ static irqreturn_t fg_delta_msoc_irq_handler(int irq, void *data)
 	if (rc < 0)
 		pr_err("Error in validating ESR, rc=%d\n", rc);
 
-#ifndef CONFIG_MACH_ASUS_SDM660
 	rc = fg_adjust_timebase(fg);
 	if (rc < 0)
 		pr_err("Error in adjusting timebase, rc=%d\n", rc);
-#endif
 
 	if (batt_psy_initialized(fg))
 		power_supply_changed(fg->batt_psy);
@@ -4922,7 +4913,7 @@ static void fg_create_debugfs(struct fg_dev *fg)
 }
 #endif
 
-#define DEFAULT_CUTOFF_VOLT_MV		3200
+#define DEFAULT_CUTOFF_VOLT_MV		3400
 #define DEFAULT_EMPTY_VOLT_MV		2850
 #define DEFAULT_RECHARGE_VOLT_MV	4250
 #define DEFAULT_CHG_TERM_CURR_MA	100
@@ -4933,8 +4924,8 @@ static void fg_create_debugfs(struct fg_dev *fg)
 #define DEFAULT_RECHARGE_SOC_THR	95
 #define DEFAULT_BATT_TEMP_COLD		0
 #define DEFAULT_BATT_TEMP_COOL		5
-#define DEFAULT_BATT_TEMP_WARM		45
-#define DEFAULT_BATT_TEMP_HOT		50
+#define DEFAULT_BATT_TEMP_WARM		80
+#define DEFAULT_BATT_TEMP_HOT		90
 #define DEFAULT_CL_START_SOC		15
 #define DEFAULT_CL_MIN_TEMP_DECIDEGC	150
 #define DEFAULT_CL_MAX_TEMP_DECIDEGC	500
@@ -5145,10 +5136,6 @@ static int fg_parse_dt(struct fg_gen3_chip *chip)
 				rc);
 	}
 
-#ifdef CONFIG_MACH_ASUS_SDM660
-	printk("enter fg_parse_dt :HW jeita cold:%d,cool:%d,warm:%d,hot:%d\n", chip->dt.jeita_thresholds[JEITA_COLD],chip->dt.jeita_thresholds[JEITA_COOL] ,chip->dt.jeita_thresholds[JEITA_WARM],chip->dt.jeita_thresholds[JEITA_HOT]); 
-#endif
-
 	if (of_property_count_elems_of_size(node,
 		"qcom,battery-thermal-coefficients",
 		sizeof(u8)) == BATT_THERM_NUM_COEFFS) {
@@ -5340,7 +5327,7 @@ static int fg_parse_dt(struct fg_gen3_chip *chip)
 	rc = of_property_read_u32(node, "qcom,fg-esr-meas-curr-ma", &temp);
 	if (!rc) {
 		/* ESR measurement current range is 60-240 mA */
-		if (temp >= 60 && temp <= 240)
+		if (temp >= 60 || temp <= 240)
 			chip->dt.esr_meas_curr_ma = temp;
 	}
 
@@ -5691,20 +5678,7 @@ static void fg_gen3_shutdown(struct platform_device *pdev)
 	struct fg_gen3_chip *chip = dev_get_drvdata(&pdev->dev);
 	struct fg_dev *fg = &chip->fg;
 	int rc, bsoc;
-
-#ifdef CONFIG_MACH_ASUS_SDM660
 	u8 mask;
-	u8 status;
-	rc = fg_read(fg, BATT_INFO_BATT_MISS_CFG(fg), &status, 1);
-	printk("fg_gen3_shutdown status0=%d\n",status);
-	rc = fg_masked_write(fg, BATT_INFO_BATT_MISS_CFG(fg),
-			BM_FROM_BATT_ID_BIT, 0);
-	if (rc < 0)
-		pr_err("Error in writing to %04x, rc=%d\n",
-			BATT_INFO_BATT_MISS_CFG(fg), rc);
-	rc = fg_read(fg, BATT_INFO_BATT_MISS_CFG(fg), &status, 1);
-	printk("fg_gen3_shutdown status1=%d\n",status);
-#endif
 
 	if (fg->charge_full) {
 		rc = fg_get_sram_prop(fg, FG_SRAM_BATT_SOC, &bsoc);
