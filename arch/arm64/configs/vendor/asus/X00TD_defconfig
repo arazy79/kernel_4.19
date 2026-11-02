@@ -988,7 +988,7 @@ CONFIG_FAKE_UNAME_5_10=y
 # Turnoff info debug di binary
 # CONFIG_DEBUG_INFO is not set
 
-# CONFIG_PRINTK is not set
+CONFIG_PRINTK=y
 
 # CONFIG_DYNAMIC_DEBUG is not set
 # CONFIG_DEBUG_FS is not set
