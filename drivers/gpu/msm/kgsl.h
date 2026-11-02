@@ -15,7 +15,13 @@
 
 #include "kgsl_gmu_core.h"
 #include "kgsl_pwrscale.h"
+#include <linux/rwsem.h>
+#include <linux/mm_types.h>
 
+#ifndef mmap_read_lock
+#define mmap_read_lock(mm)    down_read(&(mm)->mmap_sem)
+#define mmap_read_unlock(mm)  up_read(&(mm)->mmap_sem)
+#endif
 /*
  * --- kgsl drawobj flags ---
  * These flags are same as --- drawobj flags ---
