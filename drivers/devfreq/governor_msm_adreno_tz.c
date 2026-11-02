@@ -12,7 +12,9 @@
 #include <linux/ftrace.h>
 #include <linux/mm.h>
 #include <linux/msm_adreno_devfreq.h>
+#ifdef CONFIG_STATE_NOTIFIER
 #include <linux/state_notifier.h>
+#endif
 #include <asm/cacheflush.h>
 #include <soc/qcom/scm.h>
 #include <soc/qcom/qtee_shmbridge.h>
@@ -459,7 +461,11 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 	 * Force to use & record as min freq when system has
 	 * entered pm-suspend or screen-off state.
 	 */
-	if (suspended || state_suspended) {
+	if (suspended
+#ifdef CONFIG_STATE_NOTIFIER
+			|| state_suspended
+#endif
+			) {
 		*freq = devfreq->profile->freq_table[devfreq->profile->max_state - 1];
 		return 0;
 	}
