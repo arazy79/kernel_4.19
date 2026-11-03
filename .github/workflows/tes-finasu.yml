@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.19 upstream 325xxxxx
+name: -- tes finasu
 on:
   workflow_dispatch:
     inputs:
