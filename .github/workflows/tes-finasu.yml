@@ -1,4 +1,4 @@
-name: --finasu tes
+name: Kernel Build X00TD 4.19 upstream 325xxxxx
 on:
   workflow_dispatch:
     inputs:
@@ -368,8 +368,19 @@ jobs:
           SUSFS_FORK: ${{ github.event.inputs.susfs_ksu_fork }}
         run: |
           cp arch/arm64/configs/vendor/asus/${{ github.event.inputs.defconfig }} out/.config
+          # semua baris config KSU dikumpulkan di /tmp/ksu.frag, biar bisa ditulis ulang
+          # kalau oldconfig membuangnya (simbol KSU_* ikut hilang kalau dependensi KSU belum terpenuhi)
+          : > /tmp/ksu.frag
           if [ "$ENABLE_KSU" = "true" ] && [ "$ENABLE_SUSFS" = "true" ]; then
             echo "KernelSU: ON + SuSFS ($SUSFS_FORK)"
+            if [ "$SUSFS_FORK" = "finasu" ]; then
+              # Kconfig FinaSU: KSU depends on KPROBES && EXT4_FS. Branch tanpa ksu.config tidak menyalakannya,
+              # lalu oldconfig membuang KSU dan semua simbol turunannya.
+              {
+                echo "CONFIG_KPROBES=y"
+                echo "CONFIG_EXT4_FS=y"
+              } >> /tmp/ksu.frag
+            fi
             {
               echo "CONFIG_KSU=y"
               echo "CONFIG_KSU_SUSFS=y"
@@ -384,23 +395,24 @@ jobs:
               echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
               # BakaSU: KSU_SUSFS ("SUSFS Inline Hook") adalah satu pilihan dalam choice hook method,
               # sejajar dengan KSU_MANUAL_HOOK. Jangan set KSU_MANUAL_HOOK di sini, bentrok.
-            } >> out/.config
+            } >> /tmp/ksu.frag
+            if [ "$SUSFS_FORK" = "finasu" ]; then
+              echo "--- FinaSU hook symbols (dari Kconfig) ---"
+              grep -rnE "^[[:space:]]*(config|choice|menuconfig)[[:space:]]+.*(HOOK|SYSCALL|TRACEPOINT|KPROBE)" drivers/kernelsu --include='Kconfig*' || echo "(tidak ada simbol hook di Kconfig)"
+              # FinaSU: hook method berupa choice (KSU_HOOK_TRACEPOINT vs KSU_HOOK_SUSFS_INLINE).
+              # Script inline hook SuSFS dari builder cocok dengan SUSFS_INLINE, jadi pilih itu.
+              {
+                echo "CONFIG_KSU_HOOK_SUSFS_INLINE=y"
+                echo "# CONFIG_KSU_HOOK_TRACEPOINT is not set"
+              } >> /tmp/ksu.frag
+            fi
           elif [ "$ENABLE_KSU" = "true" ]; then
             echo "KernelSU: ON (tambah ksu.config)"
-            cat arch/arm64/configs/vendor/extra/ksu.config >> out/.config
+            cat arch/arm64/configs/vendor/extra/ksu.config >> /tmp/ksu.frag
           else
             echo "KernelSU: OFF"
           fi
-          if [ "$ENABLE_KSU" = "true" ] && [ "$ENABLE_SUSFS" = "true" ] && [ "$SUSFS_FORK" = "finasu" ]; then
-            echo "--- FinaSU hook symbols (dari Kconfig) ---"
-            grep -rnE "^[[:space:]]*(config|choice|menuconfig)[[:space:]]+.*(HOOK|SYSCALL|TRACEPOINT|KPROBE)" drivers/kernelsu --include=Kconfig* || echo "(tidak ada simbol hook di Kconfig)"
-            # FinaSU: hook method berupa choice (KSU_HOOK_TRACEPOINT vs KSU_HOOK_SUSFS_INLINE).
-            # Script inline hook SuSFS dari builder cocok dengan SUSFS_INLINE, jadi pilih itu.
-            {
-              echo "CONFIG_KSU_HOOK_SUSFS_INLINE=y"
-              echo "# CONFIG_KSU_HOOK_TRACEPOINT is not set"
-            } >> out/.config
-          fi
+          cat /tmp/ksu.frag >> out/.config
           yes "" | make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS oldconfig
           if [ "$ENABLE_KSU" = "true" ]; then
             if ! grep -q "^CONFIG_KSU=y" out/.config; then
@@ -416,15 +428,29 @@ jobs:
                 case "$sym" in
                   ''|'!'*|if|y|n|m|KSU) continue ;;
                 esac
-                if ! grep -q "^CONFIG_${sym}=y" out/.config; then
-                  echo "CONFIG_${sym}=y" >> out/.config
-                  echo "dependensi dipaksa: CONFIG_${sym}=y"
-                fi
+                echo "CONFIG_${sym}=y" >> /tmp/ksu.frag
+                echo "dependensi dipaksa: CONFIG_${sym}=y"
               done
+              # tulis ulang SEMUA baris KSU/SuSFS yang tadi dibuang oldconfig
+              cat /tmp/ksu.frag >> out/.config
               yes "" | make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS oldconfig
               if ! grep -q "^CONFIG_KSU=y" out/.config; then
                 echo "::error::CONFIG_KSU=y masih hilang setelah oldconfig. Kirim log bagian Kconfig di atas ke sini."
                 grep -n "KSU" out/.config || echo "(tidak ada simbol KSU sama sekali di .config)"
+                exit 1
+              fi
+            fi
+            if [ "$ENABLE_SUSFS" = "true" ]; then
+              if ! grep -q "^CONFIG_KSU_SUSFS=y" out/.config; then
+                echo "::error::CONFIG_KSU_SUSFS=y tidak aktif setelah oldconfig"
+                echo "--- definisi KSU_SUSFS di Kconfig ---"
+                grep -rn -A8 -E "^config KSU_SUSFS$" fs drivers/kernelsu --include='Kconfig*' || echo "(simbol KSU_SUSFS tidak ketemu di Kconfig)"
+                grep -n "KSU" out/.config || true
+                exit 1
+              fi
+              if [ "$SUSFS_FORK" = "finasu" ] && ! grep -q "^CONFIG_KSU_HOOK_SUSFS_INLINE=y" out/.config; then
+                echo "::error::FinaSU: CONFIG_KSU_HOOK_SUSFS_INLINE=y tidak aktif (hook backend salah), jangan lanjut build"
+                grep -n "KSU_HOOK" out/.config || echo "(tidak ada simbol KSU_HOOK di .config)"
                 exit 1
               fi
             fi
