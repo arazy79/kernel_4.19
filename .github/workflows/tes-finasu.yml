@@ -62,6 +62,10 @@ on:
         description: 'Ref FinaSU (branch/tag/SHA), cuma dipakai kalau fork = finasu. Default dev. Kalau sudah sukses, pin ke SHA'
         required: true
         default: 'dev'
+      builder_ref:
+        description: 'Ref repo JackA1ltman/NonGKI_Kernel_Build_2nd buat script hook SuSFS (branch/tag/SHA). Default = SHA lama yang sudah jalan buat bakasu/sukisu. FinaSU baru butuh hook preinit, coba isi mainline'
+        required: true
+        default: 'dcd789634247c77d8549a42aef232c680a905585'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -175,11 +179,12 @@ jobs:
         working-directory: kernel
         env:
           SUSFS_FORK: ${{ github.event.inputs.susfs_ksu_fork }}
+          BUILDER_REF: ${{ github.event.inputs.builder_ref }}
         run: |
           set -e
-          # script hook & fix patch diambil dari commit yang dipin (bukan branch), biar build bisa diulang persis
-          BUILDER_SHA=dcd789634247c77d8549a42aef232c680a905585
-          RAW="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/$BUILDER_SHA/Patches"
+          # script hook & fix patch diambil dari ref builder (default: SHA yang dipin, biar build bisa diulang persis)
+          echo "Builder ref: $BUILDER_REF"
+          RAW="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/$BUILDER_REF/Patches"
           if [ ! -f susfs_x00td_419.patch ]; then
             echo "::error::susfs_x00td_419.patch tidak ada di root repo (branch ${{ github.event.inputs.branch || 'upstream-4.19.325' }})"
             exit 1
@@ -231,6 +236,24 @@ jobs:
             grep -q "ksu_" "$f" || { echo "::error::hook KSU tidak masuk di $f"; exit 1; }
           done
           grep -q "CONFIG_KSU_SUSFS" fs/namespace.c || { echo "::error::hook SuSFS tidak ada di fs/namespace.c"; exit 1; }
+          if [ "$SUSFS_FORK" = "finasu" ]; then
+            # Kbuild FinaSU mengecek hook-site di source kernel (SUSFS Inline hook-site check).
+            # Cek di sini supaya gagalnya cepat, sebelum download toolchain dan build.
+            PREINIT_MISSING=""
+            for s in ksu_setup_preinit_file ksu_preinit_handle_post_execveat; do
+              grep -q "$s" fs/exec.c || PREINIT_MISSING="$PREINIT_MISSING $s"
+            done
+            if [ -n "$PREINIT_MISSING" ]; then
+              echo "::error::FinaSU butuh hook preinit di fs/exec.c, belum ada:$PREINIT_MISSING (script hook builder ref '$BUILDER_REF' belum memasangnya). Coba builder_ref = mainline."
+              echo "--- blok pengecekan hook-site di Kbuild FinaSU ---"
+              sed -n '90,140p' drivers/kernelsu/Kbuild || true
+              echo "--- pemakaian simbol preinit di repo FinaSU ---"
+              grep -rnE "ksu_setup_preinit_file|ksu_preinit_handle_post_execveat" FinaSU/ 2>/dev/null | head -40 || true
+              echo "--- 15 commit terakhir yang menyentuh kernel/Kbuild (buat pin finasu_ref) ---"
+              git -C FinaSU log --oneline -15 -- kernel/Kbuild 2>/dev/null || echo "(riwayat git FinaSU tidak tersedia)"
+              exit 1
+            fi
+          fi
           echo "OK: SuSFS dan hook KSU terpasang"
       - name: Select toolchain
         id: tc
