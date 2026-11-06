@@ -19,4 +19,9 @@
 
 extern int force_fast_charge;
 
+static inline bool force_fast_charge_enabled(void)
+{
+	return force_fast_charge > 0;
+}
+
 #endif
