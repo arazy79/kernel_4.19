@@ -62,6 +62,10 @@ on:
         description: 'Ref FinaSU (branch/tag/SHA), cuma dipakai kalau fork = finasu. Default dev. Kalau sudah sukses, pin ke SHA'
         required: true
         default: 'dev'
+      builder_ref:
+        description: 'Ref repo JackA1ltman/NonGKI_Kernel_Build_2nd buat script hook SuSFS (branch/tag/SHA). Default = SHA lama yang sudah jalan buat bakasu/sukisu. FinaSU baru butuh hook preinit, coba isi mainline'
+        required: true
+        default: 'dcd789634247c77d8549a42aef232c680a905585'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -170,48 +174,49 @@ jobs:
           EOF
             echo "stub include/linux/static_call.h dibuat (kernel < 5.10)"
           fi
-      - name: FinaSU compat fix (syscall_fn_t untuk 4.19)
-        if: ${{ github.event.inputs.enable_ksu == 'true' && github.event.inputs.enable_susfs == 'true' && github.event.inputs.susfs_ksu_fork == 'finasu' }}
-        working-directory: kernel
-        run: |
-          # Di 4.19 arm64, syscall_fn_t cuma didefinisikan lokal di arch/arm64/kernel/syscall.c, bukan di header.
-          # FinaSU hook/syscall_hook.h memakainya. Typedef di bawah sama persis dengan definisi 4.19 (tanpa syscall wrapper).
-          # Cuma disisipkan kalau tidak ada typedef syscall_fn_t di header kernel manapun.
-          H=drivers/kernelsu/hook/syscall_hook.h
-          if [ ! -f "$H" ]; then
-            echo "::warning::$H tidak ada di FinaSU ref ini, skip fix syscall_fn_t"
-            exit 0
-          fi
-          if grep -rqE "\(\*[[:space:]]*syscall_fn_t[[:space:]]*\)" include arch/arm64/include; then
-            echo "syscall_fn_t sudah ada di header kernel, skip"
-          elif grep -q "KSU_SYSCALL_FN_T_COMPAT" "$H"; then
-            echo "fix sudah ter-apply, skip"
-          else
-            awk -v ins='#ifndef KSU_SYSCALL_FN_T_COMPAT\n#define KSU_SYSCALL_FN_T_COMPAT\ntypedef long (*syscall_fn_t)(unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long);\n#endif' '{print} !d && /^#include/ {print ins; d=1}' "$H" > /tmp/syscall_hook.h.new
-            mv /tmp/syscall_hook.h.new "$H"
-            echo "typedef syscall_fn_t disisipkan ke $H"
-          fi
-          grep -n "syscall_fn_t" "$H" | head -10 || true
       - name: Apply SuSFS patch + SuSFS inline hooks
         if: ${{ github.event.inputs.enable_ksu == 'true' && github.event.inputs.enable_susfs == 'true' }}
         working-directory: kernel
         env:
           SUSFS_FORK: ${{ github.event.inputs.susfs_ksu_fork }}
+          BUILDER_REF: ${{ github.event.inputs.builder_ref }}
         run: |
           set -e
-          # script hook & fix patch diambil dari commit yang dipin (bukan branch), biar build bisa diulang persis
-          BUILDER_SHA=dcd789634247c77d8549a42aef232c680a905585
-          RAW="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/$BUILDER_SHA/Patches"
+          # script hook & fix patch diambil dari ref builder (default: SHA yang dipin, biar build bisa diulang persis)
+          echo "Builder ref: $BUILDER_REF"
+          RAW="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/$BUILDER_REF/Patches"
           if [ ! -f susfs_x00td_419.patch ]; then
             echo "::error::susfs_x00td_419.patch tidak ada di root repo (branch ${{ github.event.inputs.branch || 'upstream-4.19.325' }})"
             exit 1
           fi
+          echo "Kernel HEAD: $(git log -1 --format='%h %s' 2>/dev/null || echo '?')"
           if git apply -R --check susfs_x00td_419.patch 2>/dev/null; then
             echo "SuSFS kernel patch sudah ter-apply, skip"
-          else
-            git apply --check susfs_x00td_419.patch
+          elif git apply --check susfs_x00td_419.patch 2>/tmp/apply1.err; then
             git apply --whitespace=nowarn susfs_x00td_419.patch
             echo "SuSFS kernel patch applied"
+          else
+            echo "::warning::patch SuSFS tidak bisa di-apply utuh, cek per file (file yang sudah ter-patch dilewati)"
+            cat /tmp/apply1.err
+            EXCL=""
+            for f in $(grep '^diff --git ' susfs_x00td_419.patch | sed 's#^diff --git a/\([^ ]*\) b/.*#\1#'); do
+              if git apply -R --check --include="$f" susfs_x00td_419.patch 2>/dev/null; then
+                echo "sudah ter-patch, dilewati: $f"
+                EXCL="$EXCL --exclude=$f"
+              fi
+            done
+            if git apply --check $EXCL susfs_x00td_419.patch 2>/tmp/apply2.err; then
+              git apply --whitespace=nowarn $EXCL susfs_x00td_419.patch
+              echo "SuSFS kernel patch applied (file yang sudah ter-patch dilewati)"
+            else
+              echo "::error::hunk SuSFS masih gagal setelah file yang sudah ter-patch dilewati:"
+              cat /tmp/apply2.err
+              for f in $(grep -oE '^error: patch failed: [^:]+' /tmp/apply2.err | sed 's/^error: patch failed: //' | sort -u || true); do
+                echo "--- $f | jumlah baris yang menyebut susfs: $(grep -c susfs "$f" 2>/dev/null || true) | commit terakhir:"
+                git log --oneline -3 -- "$f" 2>/dev/null || true
+              done
+              exit 1
+            fi
           fi
           if [ "$SUSFS_FORK" = "sukisu" ]; then
             # fix patch dipecah per file. runtime/ksud.c ditangani terpisah: konteks hunk-nya sudah geser di upstream
@@ -253,6 +258,24 @@ jobs:
             grep -q "ksu_" "$f" || { echo "::error::hook KSU tidak masuk di $f"; exit 1; }
           done
           grep -q "CONFIG_KSU_SUSFS" fs/namespace.c || { echo "::error::hook SuSFS tidak ada di fs/namespace.c"; exit 1; }
+          if [ "$SUSFS_FORK" = "finasu" ]; then
+            # Kbuild FinaSU mengecek hook-site di source kernel (SUSFS Inline hook-site check).
+            # Cek di sini supaya gagalnya cepat, sebelum download toolchain dan build.
+            PREINIT_MISSING=""
+            for s in ksu_setup_preinit_file ksu_preinit_handle_post_execveat; do
+              grep -q "$s" fs/exec.c || PREINIT_MISSING="$PREINIT_MISSING $s"
+            done
+            if [ -n "$PREINIT_MISSING" ]; then
+              echo "::error::FinaSU butuh hook preinit di fs/exec.c, belum ada:$PREINIT_MISSING (script hook builder ref '$BUILDER_REF' belum memasangnya). Coba builder_ref = mainline."
+              echo "--- blok pengecekan hook-site di Kbuild FinaSU ---"
+              sed -n '90,140p' drivers/kernelsu/Kbuild || true
+              echo "--- pemakaian simbol preinit di repo FinaSU ---"
+              grep -rnE "ksu_setup_preinit_file|ksu_preinit_handle_post_execveat" FinaSU/ 2>/dev/null | head -40 || true
+              echo "--- 15 commit terakhir yang menyentuh kernel/Kbuild (buat pin finasu_ref) ---"
+              git -C FinaSU log --oneline -15 -- kernel/Kbuild 2>/dev/null || echo "(riwayat git FinaSU tidak tersedia)"
+              exit 1
+            fi
+          fi
           echo "OK: SuSFS dan hook KSU terpasang"
       - name: Select toolchain
         id: tc
@@ -390,8 +413,19 @@ jobs:
           SUSFS_FORK: ${{ github.event.inputs.susfs_ksu_fork }}
         run: |
           cp arch/arm64/configs/vendor/asus/${{ github.event.inputs.defconfig }} out/.config
+          # semua baris config KSU dikumpulkan di /tmp/ksu.frag, biar bisa ditulis ulang
+          # kalau oldconfig membuangnya (simbol KSU_* ikut hilang kalau dependensi KSU belum terpenuhi)
+          : > /tmp/ksu.frag
           if [ "$ENABLE_KSU" = "true" ] && [ "$ENABLE_SUSFS" = "true" ]; then
             echo "KernelSU: ON + SuSFS ($SUSFS_FORK)"
+            if [ "$SUSFS_FORK" = "finasu" ]; then
+              # Kconfig FinaSU: KSU depends on KPROBES && EXT4_FS. Branch tanpa ksu.config tidak menyalakannya,
+              # lalu oldconfig membuang KSU dan semua simbol turunannya.
+              {
+                echo "CONFIG_KPROBES=y"
+                echo "CONFIG_EXT4_FS=y"
+              } >> /tmp/ksu.frag
+            fi
             {
               echo "CONFIG_KSU=y"
               echo "CONFIG_KSU_SUSFS=y"
@@ -406,19 +440,65 @@ jobs:
               echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
               # BakaSU: KSU_SUSFS ("SUSFS Inline Hook") adalah satu pilihan dalam choice hook method,
               # sejajar dengan KSU_MANUAL_HOOK. Jangan set KSU_MANUAL_HOOK di sini, bentrok.
-            } >> out/.config
+            } >> /tmp/ksu.frag
+            if [ "$SUSFS_FORK" = "finasu" ]; then
+              echo "--- FinaSU hook symbols (dari Kconfig) ---"
+              grep -rnE "^[[:space:]]*(config|choice|menuconfig)[[:space:]]+.*(HOOK|SYSCALL|TRACEPOINT|KPROBE)" drivers/kernelsu --include='Kconfig*' || echo "(tidak ada simbol hook di Kconfig)"
+              # FinaSU: hook method berupa choice (KSU_HOOK_TRACEPOINT vs KSU_HOOK_SUSFS_INLINE).
+              # Script inline hook SuSFS dari builder cocok dengan SUSFS_INLINE, jadi pilih itu.
+              {
+                echo "CONFIG_KSU_HOOK_SUSFS_INLINE=y"
+                echo "# CONFIG_KSU_HOOK_TRACEPOINT is not set"
+              } >> /tmp/ksu.frag
+            fi
           elif [ "$ENABLE_KSU" = "true" ]; then
             echo "KernelSU: ON (tambah ksu.config)"
-            cat arch/arm64/configs/vendor/extra/ksu.config >> out/.config
+            cat arch/arm64/configs/vendor/extra/ksu.config >> /tmp/ksu.frag
           else
             echo "KernelSU: OFF"
           fi
-          if [ "$ENABLE_KSU" = "true" ] && [ "$SUSFS_FORK" = "finasu" ] && [ "$ENABLE_SUSFS" = "true" ]; then
-            echo "--- FinaSU hook symbols (dari Kconfig) ---"
-            grep -rnE "^[[:space:]]*(config|choice|menuconfig)[[:space:]]+.*(HOOK|SYSCALL|TRACEPOINT|KPROBE)" drivers/kernelsu --include=Kconfig* || echo "(tidak ada simbol hook di Kconfig)"
-          fi
+          cat /tmp/ksu.frag >> out/.config
           yes "" | make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS oldconfig
           if [ "$ENABLE_KSU" = "true" ]; then
+            if ! grep -q "^CONFIG_KSU=y" out/.config; then
+              echo "::warning::CONFIG_KSU=y hilang setelah oldconfig (dependensi tidak terpenuhi?), coba paksa dependensinya"
+              echo "--- drivers/kernelsu/Kconfig (40 baris pertama) ---"
+              sed -n '1,40p' drivers/kernelsu/Kconfig
+              echo "--- baris kernelsu di drivers/Kconfig ---"
+              grep -n kernelsu drivers/Kconfig || echo "(tidak ada)"
+              # ambil 'depends on' dari blok 'config KSU', paksa simbol positifnya jadi =y
+              DEPS=$(awk '/^[[:space:]]*config[[:space:]]+KSU[[:space:]]*$/{f=1;next} f&&/^[[:space:]]*(config|choice|menuconfig|menu|endmenu)[[:space:]]/{f=0} f&&/depends on/{sub(/.*depends on/,""); print}' drivers/kernelsu/Kconfig | tr -c 'A-Za-z0-9_!\n' ' ')
+              echo "dependensi KSU dari Kconfig: ${DEPS:-(tidak ada)}"
+              for sym in $DEPS; do
+                case "$sym" in
+                  ''|'!'*|if|y|n|m|KSU) continue ;;
+                esac
+                echo "CONFIG_${sym}=y" >> /tmp/ksu.frag
+                echo "dependensi dipaksa: CONFIG_${sym}=y"
+              done
+              # tulis ulang SEMUA baris KSU/SuSFS yang tadi dibuang oldconfig
+              cat /tmp/ksu.frag >> out/.config
+              yes "" | make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS oldconfig
+              if ! grep -q "^CONFIG_KSU=y" out/.config; then
+                echo "::error::CONFIG_KSU=y masih hilang setelah oldconfig. Kirim log bagian Kconfig di atas ke sini."
+                grep -n "KSU" out/.config || echo "(tidak ada simbol KSU sama sekali di .config)"
+                exit 1
+              fi
+            fi
+            if [ "$ENABLE_SUSFS" = "true" ]; then
+              if ! grep -q "^CONFIG_KSU_SUSFS=y" out/.config; then
+                echo "::error::CONFIG_KSU_SUSFS=y tidak aktif setelah oldconfig"
+                echo "--- definisi KSU_SUSFS di Kconfig ---"
+                grep -rn -A8 -E "^config KSU_SUSFS$" fs drivers/kernelsu --include='Kconfig*' || echo "(simbol KSU_SUSFS tidak ketemu di Kconfig)"
+                grep -n "KSU" out/.config || true
+                exit 1
+              fi
+              if [ "$SUSFS_FORK" = "finasu" ] && ! grep -q "^CONFIG_KSU_HOOK_SUSFS_INLINE=y" out/.config; then
+                echo "::error::FinaSU: CONFIG_KSU_HOOK_SUSFS_INLINE=y tidak aktif (hook backend salah), jangan lanjut build"
+                grep -n "KSU_HOOK" out/.config || echo "(tidak ada simbol KSU_HOOK di .config)"
+                exit 1
+              fi
+            fi
             echo "=== CONFIG_KSU* setelah oldconfig ==="
             grep -n "CONFIG_KSU" out/.config || echo "(tidak ada)"
           fi
