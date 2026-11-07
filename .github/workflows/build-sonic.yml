@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.19 SONIC
+name: Kernel Build X00TD 4.19 sonic bakasu
 on:
   workflow_dispatch:
     inputs:
@@ -9,7 +9,7 @@ on:
       branch:
         description: 'Branch / tag / commit yang di-checkout'
         required: true
-        default: 'a16-sonic'
+        default: '16'
       defconfig:
         description: 'Defconfig path (relatif dari arch/arm64/configs/)'
         required: true
@@ -72,7 +72,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ github.event.inputs.repo || 'arazy79/android-kernel-tes-4.19' }}
-          ref: ${{ github.event.inputs.branch || 'upstream-4.19.325' }}
+          ref: ${{ github.event.inputs.branch || 'fastcharge-test' }}
           path: kernel
           submodules: recursive
       - name: Setup KernelSU
@@ -169,7 +169,7 @@ jobs:
           BUILDER_SHA=dcd789634247c77d8549a42aef232c680a905585
           RAW="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/$BUILDER_SHA/Patches"
           if [ ! -f susfs_x00td_419.patch ]; then
-            echo "::error::susfs_x00td_419.patch tidak ada di root repo (branch ${{ github.event.inputs.branch || 'upstream-4.19.325' }})"
+            echo "::error::susfs_x00td_419.patch tidak ada di root repo (branch ${{ github.event.inputs.branch || 'fastcharge-test' }})"
             exit 1
           fi
           if git apply -R --check susfs_x00td_419.patch 2>/dev/null; then
@@ -335,7 +335,7 @@ jobs:
         run: |
           echo "=== Repo & branch ==="
           echo "Repo  : ${{ github.event.inputs.repo || 'arazy79/android-kernel-tes-4.19' }}"
-          echo "Branch: ${{ github.event.inputs.branch || 'upstream-4.19.325' }}"
+          echo "Branch: ${{ github.event.inputs.branch || 'fastcharge-test' }}"
           echo "=== Kernel directory contents ==="
           ls -la kernel/
           echo "=== Defconfig exists? ==="
@@ -460,6 +460,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-Build-X00TD-SKYWALKER-4.19-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.enable_ksu == 'true' && (github.event.inputs.enable_susfs == 'true' && format('KSU-SUSFS-{0}', github.event.inputs.susfs_ksu_fork) || 'KSU') || 'NOKSU' }}-${{ github.run_id }}
+          name: Kernel-Build-X00TD-SONIC-4.19-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.enable_ksu == 'true' && (github.event.inputs.enable_susfs == 'true' && format('KSU-SUSFS-{0}', github.event.inputs.susfs_ksu_fork) || 'KSU') || 'NOKSU' }}-${{ github.run_id }}
           path: |
             kernel/out/arch/arm64/boot/Image.gz-dtb
