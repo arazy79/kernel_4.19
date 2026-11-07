@@ -1325,7 +1325,7 @@
 			<  2150400000 0x04040070 0x0b590059 0x2 6 >,
 			<  2208000000 0x04040073 0x0b5c005c 0x3 7 >;
 
-		qcom,up-timer = <1000 2000>;
+		qcom,up-timer = <3000 2000>;
 		qcom,down-timer = <2000 500>;
 		qcom,set-ret-inactive;
 		qcom,enable-llm-freq-vote;
@@ -1348,7 +1348,7 @@
 		qcom,apm-mode-ctl = <0x179d0004 0x179d0010>;
 		qcom,apm-ctrl-status = <0x179d000c 0x179d0018>;
 
-		qcom,apm-threshold-voltage = <870000>;
+		qcom,apm-threshold-voltage = <872000>;
 		qcom,boost-fsm-en;
 		qcom,safe-fsm-en;
 		qcom,ps-fsm-en;
