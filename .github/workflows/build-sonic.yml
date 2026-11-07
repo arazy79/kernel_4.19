@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.19 upstream 325
+name: Kernel Build X00TD 4.19 SONIC
 on:
   workflow_dispatch:
     inputs:
