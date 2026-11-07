@@ -185,37 +185,87 @@ jobs:
           # script hook & fix patch diambil dari ref builder (default: SHA yang dipin, biar build bisa diulang persis)
           echo "Builder ref: $BUILDER_REF"
           RAW="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/$BUILDER_REF/Patches"
-          if [ ! -f susfs_x00td_419.patch ]; then
-            echo "::error::susfs_x00td_419.patch tidak ada di root repo (branch ${{ github.event.inputs.branch || 'upstream-4.19.325' }})"
+          P=susfs_x00td_419.patch
+          if [ ! -f "$P" ]; then
+            echo "::error::$P tidak ada di root repo (branch ${{ github.event.inputs.branch || 'upstream-4.19.325' }})"
             exit 1
           fi
           echo "Kernel HEAD: $(git log -1 --format='%h %s' 2>/dev/null || echo '?')"
-          if git apply -R --check susfs_x00td_419.patch 2>/dev/null; then
+          echo "Baris CRLF di patch: $(grep -c $'\r' "$P" || true)"
+          if git apply -R --check "$P" 2>/dev/null; then
             echo "SuSFS kernel patch sudah ter-apply, skip"
-          elif git apply --check susfs_x00td_419.patch 2>/tmp/apply1.err; then
-            git apply --whitespace=nowarn susfs_x00td_419.patch
+          elif git apply --check "$P" 2>/tmp/apply1.err; then
+            git apply --whitespace=nowarn "$P"
             echo "SuSFS kernel patch applied"
           else
-            echo "::warning::patch SuSFS tidak bisa di-apply utuh, cek per file (file yang sudah ter-patch dilewati)"
+            echo "::group::Diagnostik patch SuSFS (git apply strict gagal)"
             cat /tmp/apply1.err
-            EXCL=""
-            for f in $(grep '^diff --git ' susfs_x00td_419.patch | sed 's#^diff --git a/\([^ ]*\) b/.*#\1#'); do
-              if git apply -R --check --include="$f" susfs_x00td_419.patch 2>/dev/null; then
-                echo "sudah ter-patch, dilewati: $f"
-                EXCL="$EXCL --exclude=$f"
+            echo "--- versi dasar patch vs file di source (SAMA = file identik dengan dasar patch) ---"
+            awk '/^diff --git /{f=$3; sub(/^a\//,"",f)} /^index [0-9a-f]+\.\.[0-9a-f]+/{split($2,a,"\\.\\."); print f, a[1]}' "$P" | while read -r f base; do
+              case "$base" in
+                0000000*) continue ;;
+              esac
+              if [ -f "$f" ]; then
+                cur=$(git hash-object "$f" | cut -c1-"${#base}")
+                if [ "$cur" = "$base" ]; then
+                  echo "SAMA       $f"
+                else
+                  echo "BEDA       $f (dasar patch $base, source $cur)"
+                fi
+              else
+                echo "TIDAK ADA  $f"
               fi
             done
-            if git apply --check $EXCL susfs_x00td_419.patch 2>/tmp/apply2.err; then
-              git apply --whitespace=nowarn $EXCL susfs_x00td_419.patch
-              echo "SuSFS kernel patch applied (file yang sudah ter-patch dilewati)"
-            else
-              echo "::error::hunk SuSFS masih gagal setelah file yang sudah ter-patch dilewati:"
-              cat /tmp/apply2.err
-              for f in $(grep -oE '^error: patch failed: [^:]+' /tmp/apply2.err | sed 's/^error: patch failed: //' | sort -u || true); do
-                echo "--- $f | jumlah baris yang menyebut susfs: $(grep -c susfs "$f" 2>/dev/null || true) | commit terakhir:"
-                git log --oneline -3 -- "$f" 2>/dev/null || true
-              done
-              exit 1
+            for item in $(grep -oE 'patch failed: [^ ]+:[0-9]+' /tmp/apply1.err | sed 's/^patch failed: //' | sort -u || true); do
+              f="${item%:*}"
+              ln="${item##*:}"
+              echo "=== $f (hunk dekat baris $ln) | baris CRLF di file: $(grep -c $'\r' "$f" 2>/dev/null || true) ==="
+              echo "--- diharapkan patch (awal hunk) ---"
+              awk -v F="$f" '$0 ~ ("^diff --git a/" F " ") {p=1; next} p && /^diff --git / {exit} p' "$P" | sed -n '1,28p'
+              echo "--- isi source sekarang ---"
+              s=$((ln > 3 ? ln - 3 : 1))
+              sed -n "${s},$((ln + 22))p" "$f"
+            done
+            echo "::endgroup::"
+            APPLIED=""
+            for OPTS in "-C3" "-C2" "-C1" "--ignore-whitespace -C1"; do
+              if git apply --check $OPTS "$P" 2>/dev/null; then
+                git apply --whitespace=nowarn $OPTS "$P"
+                echo "SuSFS kernel patch applied (git apply $OPTS)"
+                APPLIED=1
+                break
+              fi
+            done
+            if [ -z "$APPLIED" ]; then
+              echo "::warning::git apply biasa gagal, coba --3way (ambil riwayat git supaya versi dasar patch tersedia)"
+              timeout 900 git fetch --quiet --filter=blob:none --unshallow origin "+refs/heads/*:refs/remotes/origin/*" || echo "(fetch riwayat gagal atau timeout, lanjut tanpa riwayat penuh)"
+              rc=0
+              git apply --3way --whitespace=nowarn "$P" > /tmp/threeway.log 2>&1 || rc=$?
+              cat /tmp/threeway.log
+              if [ "$rc" -eq 0 ]; then
+                echo "SuSFS kernel patch applied (git apply --3way)"
+                APPLIED=1
+              elif [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+                echo "::error::--3way menghasilkan konflik. File yang konflik:"
+                git diff --name-only --diff-filter=U
+                for f in $(git diff --name-only --diff-filter=U); do
+                  echo "--- penanda konflik di $f ---"
+                  grep -n -A14 '^<<<<<<<' "$f" | head -80 || true
+                done
+                exit 1
+              fi
+            fi
+            if [ -z "$APPLIED" ]; then
+              echo "::warning::--3way tidak bisa jalan (versi dasar tidak ada?), coba patch -p1 dengan fuzz (cek baris 'with fuzz' di bawah)"
+              rc=0
+              patch -p1 -l -N -F3 --no-backup-if-mismatch < "$P" > /tmp/patch.log 2>&1 || rc=$?
+              cat /tmp/patch.log
+              if [ "$rc" -ne 0 ] || find . -name '*.rej' | grep -q .; then
+                echo "::error::hunk SuSFS gagal walau pakai fuzz, isi .rej di bawah"
+                find . -name '*.rej' -print -exec cat {} \;
+                exit 1
+              fi
+              echo "SuSFS kernel patch applied (patch -p1 -F3), cek hunk yang 'with fuzz' atau 'offset' di log"
             fi
           fi
           if [ "$SUSFS_FORK" = "sukisu" ]; then
