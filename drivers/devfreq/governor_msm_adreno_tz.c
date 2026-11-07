@@ -418,7 +418,9 @@ static inline int tz_clamp_idx(int lvl, int size)
 		return size - 1;
 	return lvl;
 }
+
 #endif
+
 static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 {
 	int result = 0;
