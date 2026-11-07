@@ -464,12 +464,12 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 	// scale busy time up based on adrenoboost parameter, only if MIN_BUSY exceeded...
 	if (adrenoboost) {
 		if (adrenoboost == 1) {
-			priv->bin.busy_time += (unsigned int)((stats.busy_time * ( 1 + adrenoboost ) * lvl_multiplicator_map_1[ last_level ]) / lvl_divider_map_1[ last_level ]);
+			priv->bin.busy_time += (unsigned int)((stats->busy_time * ( 1 + adrenoboost ) * lvl_multiplicator_map_1[ lvl_idx ]) / lvl_divider_map_1[ lvl_idx ]);
 		} else
 		if (adrenoboost == 2) {
-			priv->bin.busy_time += (unsigned int)((stats.busy_time * ( 1 + adrenoboost ) * lvl_multiplicator_map_2[ last_level ]  * 7 ) / (lvl_divider_map_2[ last_level ] * 10));
+			priv->bin.busy_time += (unsigned int)((stats->busy_time * ( 1 + adrenoboost ) * lvl_multiplicator_map_2[ last_level ]  * 7 ) / (lvl_divider_map_2[ last_level ] * 10));
 		} else {
-			priv->bin.busy_time += (unsigned int)((stats.busy_time * ( 1 + adrenoboost ) * lvl_multiplicator_map_3[ last_level ] * 8 ) / (lvl_divider_map_3[ last_level ] * 10));
+			priv->bin.busy_time += (unsigned int)((stats->busy_time * ( 1 + adrenoboost ) * lvl_multiplicator_map_3[ last_level ] * 8 ) / (lvl_divider_map_3[ last_level ] * 10));
 		}
 	} else {
 		priv->bin.busy_time += stats->busy_time;
