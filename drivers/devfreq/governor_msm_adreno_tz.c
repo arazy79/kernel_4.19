@@ -407,8 +407,6 @@ static int lvl_divider_map_2[] = {10,10,10,1,1,1,1    ,1,1};
 static int lvl_multiplicator_map_3[] = {9,1,1,1,1,10,8    ,1,1};
 static int lvl_divider_map_3[] = {10,1,1,1,1,14,12    ,1,1};
 
-#endif
-
 /* Clamp level so it never indexes past the end of the maps above */
 static inline int tz_clamp_idx(int lvl, int size)
 {
@@ -418,7 +416,6 @@ static inline int tz_clamp_idx(int lvl, int size)
 		return size - 1;
 	return lvl;
 }
-
 #endif
 
 static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
