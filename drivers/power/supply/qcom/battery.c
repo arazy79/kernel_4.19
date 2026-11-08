@@ -5,9 +5,7 @@
 
 #define pr_fmt(fmt) "QCOM-BATT: %s: " fmt, __func__
 
-#ifdef CONFIG_DEBUG_FS
 #include <linux/debugfs.h>
-#endif
 #include <linux/device.h>
 #include <linux/delay.h>
 #include <linux/module.h>
@@ -104,9 +102,7 @@ struct pl_data {
 	int			main_fcc_max;
 	enum power_supply_type	charger_type;
 	/* debugfs directory */
-#ifdef CONFIG_DEBUG_FS
 	struct dentry		*dfs_root;
-#endif
 	u32			float_voltage_uv;
 };
 
@@ -121,21 +117,15 @@ enum {
 	FORCE_INOV_DISABLE_BIT	= BIT(1),
 };
 
-#ifdef CONFIG_DEBUG_FS
 static int debug_mask;
-#endif
 
-#ifdef DEBUG
-#define pl_dbg(chip, reason, fmt, ...)			\
-	do {						\
-		if (debug_mask & (reason))		\
+#define pl_dbg(chip, reason, fmt, ...)				\
+	do {								\
+		if (debug_mask & (reason))				\
 			pr_info(fmt, ##__VA_ARGS__);	\
-		else					\
-			pr_debug(fmt, ##__VA_ARGS__);	\
+		else							\
+			pr_debug(fmt, ##__VA_ARGS__);		\
 	} while (0)
-#else
-#define pl_dbg(chip, reason, fmt, ...) do {} while (0)
-#endif
 
 #define IS_USBIN(mode)	((mode == POWER_SUPPLY_PL_USBIN_USBIN) \
 			|| (mode == POWER_SUPPLY_PL_USBIN_USBIN_EXT))
@@ -457,7 +447,6 @@ static void split_settled(struct pl_data *chip)
 		}
 
 		pval.intval = main_ua;
-
 		/* Set ICL on main charger */
 		rc = power_supply_set_property(chip->main_psy,
 				POWER_SUPPLY_PROP_CURRENT_MAX, &pval);
@@ -1236,7 +1225,7 @@ static int pl_fv_vote_callback(struct votable *votable, void *data,
 	rc = power_supply_set_property(chip->main_psy,
 			POWER_SUPPLY_PROP_VOLTAGE_MAX, &pval);
 	if (rc < 0) {
-		pr_debug("Couldn't set main fv, rc=%d\n", rc);
+		pr_err("Couldn't set main fv, rc=%d\n", rc);
 		return rc;
 	}
 
@@ -1245,7 +1234,7 @@ static int pl_fv_vote_callback(struct votable *votable, void *data,
 		rc = power_supply_set_property(chip->pl_psy,
 				POWER_SUPPLY_PROP_VOLTAGE_MAX, &pval);
 		if (rc < 0) {
-			pr_debug("Couldn't set float on parallel rc=%d\n", rc);
+			pr_err("Couldn't set float on parallel rc=%d\n", rc);
 			return rc;
 		}
 	}
@@ -1964,27 +1953,7 @@ static void pl_config_init(struct pl_data *chip, int smb_version)
 	}
 }
 
-#ifdef CONFIG_DEBUG_FS
-static void qcom_batt_create_debugfs(struct pl_data *chip)
-{
-	struct dentry *entry;
-
-	chip->dfs_root = debugfs_create_dir("battery", NULL);
-	if (IS_ERR_OR_NULL(chip->dfs_root)) {
-		pr_err("Couldn't create battery debugfs rc=%ld\n",
-			(long)chip->dfs_root);
-		return;
-	}
-
-	entry = debugfs_create_u32("debug_mask", 0600, chip->dfs_root,
-			&debug_mask);
-	if (IS_ERR_OR_NULL(entry))
-		pr_err("Couldn't create force_dc_psy_update file rc=%ld\n",
-			(long)entry);
-}
-#endif
-
-#define DEFAULT_RESTRICTED_CURRENT_UA	1500000
+#define DEFAULT_RESTRICTED_CURRENT_UA	1000000
 int qcom_batt_init(struct charger_param *chg_param)
 {
 	struct pl_data *chip;
@@ -2008,7 +1977,6 @@ int qcom_batt_init(struct charger_param *chg_param)
 #ifdef CONFIG_DEBUG_FS
 	qcom_batt_create_debugfs(chip);
 #endif
-
 	chip->slave_pct = 50;
 	chip->chg_param = chg_param;
 	pl_config_init(chip, chg_param->smb_version);

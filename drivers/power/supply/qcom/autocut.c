@@ -1,213 +1,127 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Auto-cut charging for X00TD (kernel 4.19, qpnp-smb2 / smblib)
- *
- * Fitur:
- *  - Stop charging saat capacity >= max_soc
- *  - Resume charging saat capacity <= min_soc
- *  - Hysteresis: di antara min..max, biarkan state apa adanya
- *  - Enable/disable runtime via /sys/module/autocut/parameters/autocut_enabled
- *  - Pakai POWER_SUPPLY_PROP_CTM_CURRENT_MAX (CTM_VOTER), jadi TIDAK
- *    rebutan dengan ROM charging-limit slider (yang pakai USER_VOTER).
- *    usb_icl_votable pakai VOTE_MIN -> min dari semua vote menang.
- *  - Debounce USB present -> cegah false "force resume" saat VBUS glitch.
- *  - Reset state saat unplug, jadi plug berikutnya fresh.
- *  - Saat disable atau unload, CTM voter di-release (set -1) supaya
- *    charging kembali 100% dikontrol ROM/driver.
- *
- * Runtime control:
- *   echo 0 > /sys/module/autocut/parameters/autocut_enabled   # off
- *   echo 1 > /sys/module/autocut/parameters/autocut_enabled   # on
- *   echo 95 > /sys/module/autocut/parameters/min_soc
- *   echo 100 > /sys/module/autocut/parameters/max_soc
- *   cat /sys/module/autocut/parameters/autocut_enabled
+ * Auto-cut charging for X00TD (4.19)
+ * Target: pc_port (main USB charger), fallback usb (USB-PD)
+ * All params writable via /sys/module/autocut/parameters/ (root)
  */
-
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/workqueue.h>
 #include <linux/power_supply.h>
-#include <linux/delay.h>
 
-/* ---------------- Tunables ---------------- */
-
-static int  max_soc         = 100;
-static int  min_soc         = 90;
-static bool autocut_enabled = true;
+static int max_soc = 100;
+static int min_soc = 90;
+static int enabled = 1;
 
 module_param(max_soc, int, 0644);
-MODULE_PARM_DESC(max_soc, "SOC (%) to stop charging (default 100)");
-
+MODULE_PARM_DESC(max_soc, "Stop charging at this SOC %%");
 module_param(min_soc, int, 0644);
-MODULE_PARM_DESC(min_soc, "SOC (%) to resume charging (default 90)");
-
-module_param(autocut_enabled, bool, 0644);
-MODULE_PARM_DESC(autocut_enabled, "1=aktif, 0=nonaktif (default 1)");
-
-/* ---------------- Internal state ---------------- */
+MODULE_PARM_DESC(min_soc, "Resume charging at this SOC %%");
+module_param(enabled, int, 0644);
+MODULE_PARM_DESC(enabled, "1=on, 0=off (charging forced resume)");
 
 static struct delayed_work autocut_work;
-static bool suspended;       /* autocut sedang hold charging? */
-static bool was_connected;   /* transisi unplug -> plug */
+static int last_usb_present = -1;
 
-/*
- * Set CTM voter:
- *   ua = -1  -> release (tidak suspend dari autocut)
- *   ua =  0  -> paksa 0mA -> effective USB_ICL = 0 -> hardware suspend
- * Nilai lain tidak dipakai supaya kita tidak pernah masuk jalur
- * forced_current() di smblib_set_icl_current() yang selalu un-suspend.
- */
-static int set_ctm(int ua)
+static void autocut_set_suspend(struct power_supply *chg_psy, int suspend)
 {
-	struct power_supply *usb;
 	union power_supply_propval val;
 	int ret;
 
-	usb = power_supply_get_by_name("usb");
-	if (!usb)
-		return -ENODEV;
+	if (!chg_psy)
+		return;
 
-	val.intval = ua;
-	ret = power_supply_set_property(usb,
-			POWER_SUPPLY_PROP_CTM_CURRENT_MAX, &val);
-	if (ret < 0)
-		pr_warn("autocut: CTM set %d failed rc=%d\n", ua, ret);
-	power_supply_put(usb);
-	return ret;
-}
-
-/* Baca PRESENT dua kali dengan jeda; harus dua-duanya 1 */
-static int usb_present_stable(void)
-{
-	struct power_supply *usb;
-	union power_supply_propval val;
-	int a = 0, b = 0;
-
-	usb = power_supply_get_by_name("usb");
-	if (!usb)
-		return 0;
-
-	if (!power_supply_get_property(usb, POWER_SUPPLY_PROP_PRESENT, &val))
-		a = !!val.intval;
-
-	msleep(100);
-
-	if (!power_supply_get_property(usb, POWER_SUPPLY_PROP_PRESENT, &val))
-		b = !!val.intval;
-
-	power_supply_put(usb);
-	return (a && b) ? 1 : 0;
-}
-
-static int get_capacity(void)
-{
-	struct power_supply *batt;
-	union power_supply_propval val;
-	int cap = -1;
-
-	batt = power_supply_get_by_name("battery");
-	if (!batt)
-		return -1;
-
-	if (!power_supply_get_property(batt, POWER_SUPPLY_PROP_CAPACITY, &val))
-		cap = val.intval;
-	power_supply_put(batt);
-	return cap;
+	val.intval = suspend;
+	ret = power_supply_set_property(chg_psy,
+					POWER_SUPPLY_PROP_INPUT_SUSPEND, &val);
+	if (ret)
+		pr_err("autocut: set suspend=%d failed (%d)\n", suspend, ret);
 }
 
 static void autocut_work_fn(struct work_struct *work)
 {
-	int present, cap;
+	struct power_supply *batt_psy = NULL, *chg_psy = NULL;
+	union power_supply_propval val;
+	int ret, capacity = -1, usb_present = 0;
 
-	/* ---- Fitur di-disable dari userspace ---- */
-	if (!autocut_enabled) {
-		if (suspended) {
-			set_ctm(-1);
-			suspended = false;
-			pr_info("autocut: disabled -> release CTM\n");
-		}
-		goto resched;
+	/* Primary: pc_port (main charger), fallback: usb (PD) */
+	chg_psy = power_supply_get_by_name("pc_port");
+	if (!chg_psy) {
+		chg_psy = power_supply_get_by_name("usb");
+		if (chg_psy)
+			pr_info_once("autocut: using usb (PD) as charger\n");
 	}
 
-	/* ---- Deteksi USB dengan debounce ---- */
-	present = usb_present_stable();
-
-	if (!present) {
-		if (was_connected) {
-			was_connected = false;
-			suspended = false;
-			set_ctm(-1);
-			pr_info("autocut: unplugged, state reset\n");
-		}
-		goto resched;
+	if (chg_psy) {
+		ret = power_supply_get_property(chg_psy,
+						POWER_SUPPLY_PROP_PRESENT, &val);
+		if (!ret)
+			usb_present = val.intval;
 	}
 
-	cap = get_capacity();
-	if (cap < 0)
-		goto resched;
-
-	/* ---- Fresh plug-in ---- */
-	if (!was_connected) {
-		was_connected = true;
-		suspended = false;
-		set_ctm(-1);            /* serahkan dulu ke ROM/driver */
-		pr_info("autocut: plug-in (cap=%d), CTM released\n", cap);
+	batt_psy = power_supply_get_by_name("battery");
+	if (batt_psy) {
+		ret = power_supply_get_property(batt_psy,
+						POWER_SUPPLY_PROP_CAPACITY, &val);
+		if (!ret)
+			capacity = val.intval;
 	}
 
-	/* ---- State machine dengan HOLD enforcement ---- */
-	if (!suspended && cap >= max_soc) {
-		if (set_ctm(0) == 0) {
-			suspended = true;
+	/* MODULE DISABLED: force resume, skip all logic */
+	if (!enabled) {
+		autocut_set_suspend(chg_psy, 0);
+		last_usb_present = usb_present;
+		goto out;
+	}
+
+	/* Charger just plugged in: always resume first */
+	if (usb_present == 1 && last_usb_present != 1) {
+		autocut_set_suspend(chg_psy, 0);
+		pr_info("autocut: plugged, force resume (soc=%d)\n", capacity);
+	} else if (usb_present == 1 && capacity >= 0) {
+		if (capacity >= max_soc) {
+			autocut_set_suspend(chg_psy, 1);
 			pr_info("autocut: STOP at %d%% (max=%d)\n",
-				cap, max_soc);
-		}
-	} else if (suspended && cap <= min_soc) {
-		if (set_ctm(-1) == 0) {
-			suspended = false;
+				capacity, max_soc);
+		} else if (capacity <= min_soc) {
+			autocut_set_suspend(chg_psy, 0);
 			pr_info("autocut: RESUME at %d%% (min=%d)\n",
-				cap, min_soc);
+				capacity, min_soc);
 		}
-	} else if (suspended) {
-		/*
-		 * HOLD: re-assert tiap tick. Kalau ada voter lain
-		 * (JEITA FORCE_FAST_CHARGE, thermal, dll) yang coba
-		 * un-suspend, kita tetap menang karena VOTE_MIN.
-		 */
-		set_ctm(0);
+		/* between min and max: hold current state */
 	}
-	/* else: belum suspend, cap < max -> biarkan charging */
 
-resched:
+	last_usb_present = usb_present;
+
+out:
+	if (chg_psy)
+		power_supply_put(chg_psy);
+	if (batt_psy)
+		power_supply_put(batt_psy);
+
 	schedule_delayed_work(&autocut_work, msecs_to_jiffies(3000));
 }
 
 static int __init autocut_init(void)
 {
-	if (min_soc > max_soc) {
-		pr_err("autocut: min_soc(%d) > max_soc(%d), swap?\n",
-			min_soc, max_soc);
-		return -EINVAL;
-	}
-
 	INIT_DELAYED_WORK(&autocut_work, autocut_work_fn);
-	schedule_delayed_work(&autocut_work, msecs_to_jiffies(3000));
-
-	pr_info("autocut: loaded (enabled=%d max=%d min=%d voter=CTM)\n",
-		autocut_enabled, max_soc, min_soc);
+	/* wait 5s for power_supply devices to register at boot */
+	schedule_delayed_work(&autocut_work, msecs_to_jiffies(5000));
+	pr_info("autocut: loaded (max=%d min=%d enabled=%d)\n",
+		max_soc, min_soc, enabled);
 	return 0;
 }
 
 static void __exit autocut_exit(void)
 {
 	cancel_delayed_work_sync(&autocut_work);
-	set_ctm(-1);            /* restore charging saat unload */
-	pr_info("autocut: unloaded (CTM released)\n");
+	pr_info("autocut: unloaded\n");
 }
 
 module_init(autocut_init);
 module_exit(autocut_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Auto-cut charging via CTM_CURRENT_MAX, coexists with ROM limit");
+MODULE_DESCRIPTION("Auto-cut charging for X00TD (pc_port target)");
 MODULE_AUTHOR("X00TD Porter");
