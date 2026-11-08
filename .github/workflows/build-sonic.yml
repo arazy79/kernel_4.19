@@ -34,19 +34,13 @@ jobs:
       ARCH: arm64
       CCACHE_DIR: ${{ github.workspace }}/kernel/out/.ccache
     steps:
-      - name: Checkout kernel
+      - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
           repository: ${{ github.event.inputs.repo }}
           ref: ${{ github.event.inputs.branch }}
           path: kernel
           submodules: recursive
-
-      - name: Checkout build repo (buat ambil patch SuSFS)
-        uses: actions/checkout@v4
-        with:
-          path: build_repo
-          fetch-depth: 1
 
       - name: Setup BakaSU
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
@@ -61,10 +55,10 @@ jobs:
           KSU_SHA="$(git -C KernelSU rev-parse HEAD)"
           echo "short_sha=${KSU_SHA:0:8}" >> "$GITHUB_OUTPUT"
           sh KernelSU/kernel/setup.sh "$BAKASU_REF"
-          [ -f drivers/kernelsu/Kconfig ] || { echo "::error::Kconfig missing"; exit 1; }
+          [ -f drivers/kernelsu/Kconfig ] || { echo "::error::Kconfig tidak ada"; exit 1; }
           echo "OK: BakaSU terintegrasi"
 
-      - name: Apply JackA1ltman hook (versi 2.3.00)
+      - name: Apply JackA1ltman hooks (ksu_handle_*)
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
         run: |
@@ -83,8 +77,9 @@ jobs:
         working-directory: kernel
         run: |
           set -e
-          PATCH_FILE="${{ github.workspace }}/build_repo/patches/susfs_x00td_419.patch"
-          [ -f "$PATCH_FILE" ] || { echo "::error::patch file tidak ada di build_repo/patches/"; exit 1; }
+          PATCH_FILE="susfs_x00td_419.patch"
+          [ -f "$PATCH_FILE" ] || { echo "::error::$PATCH_FILE tidak ada di root kernel repo"; ls -la | head -30; exit 1; }
+          echo "Pakai patch: $PATCH_FILE"
           patch -p1 --forward --no-backup-if-mismatch < "$PATCH_FILE" || true
           if find . -name "*.rej" | grep -q .; then
             echo "::warning::ada hunk gagal:"; find . -name "*.rej"
@@ -139,11 +134,13 @@ jobs:
             wget -q "https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/06092026/neutron-clang-06092026.tar.zst" -O /tmp/clang.tar.zst
             tar -xf /tmp/clang.tar.zst -C "$HOME/neutron-clang"
             rm -f /tmp/clang.tar.zst
+            [ -x "$HOME/neutron-clang/bin/clang" ] || { echo "::error::clang tidak ada"; exit 1; }
           else
             cd "$HOME"
             wget -q "https://github.com/mvaisakh/gcc-build/releases/download/06052026/eva-gcc-arm64-06052026.xz" -O gcc.tar.xz
             tar -xf gcc.tar.xz
             rm -f gcc.tar.xz
+            [ -d "$HOME/gcc-arm64/bin" ] || { echo "::error::gcc-arm64/bin tidak ada"; exit 1; }
           fi
 
       - name: Setup toolchain env
@@ -164,6 +161,7 @@ jobs:
               for p in aarch64-linux-android- aarch64-linux-gnu- aarch64-elf- aarch64-linux-; do
                 if [ -f "$TC/bin/${p}gcc" ]; then prefix="$p"; break; fi
               done
+              if [ -z "$prefix" ]; then echo "::error::gcc aarch64 tidak ditemukan"; exit 1; fi
               echo "$TC/bin" >> "$GITHUB_PATH"
               echo "TC_MAKE_ARGS=CROSS_COMPILE=$TC/bin/$prefix CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               ;;
@@ -213,6 +211,7 @@ jobs:
         env:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
         run: |
+          echo "CPU cores: $(nproc)"
           if [ "$TOOLCHAIN" != "gcc" ]; then
             make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS CC="ccache clang" KCFLAGS="$TC_KCFLAGS" -j"$(nproc)"
           else
@@ -224,6 +223,7 @@ jobs:
         working-directory: kernel
         continue-on-error: true
         run: |
+          grep -E '^CONFIG_KSU' out/.config || true
           if grep -qi "ksu" out/System.map && grep -qi "susfs" out/System.map; then
             echo "OK: simbol ksu + susfs ada"
           else
@@ -239,6 +239,7 @@ jobs:
           [ -z "$DTB" ] && DTB=$(find out/arch/arm64/boot/dts -name "sdm636.dtb" | head -1)
           [ -z "$DTB" ] && DTB=$(find out/arch/arm64/boot/dts -name "sdm660.dtb" | head -1)
           [ -z "$DTB" ] && { echo "::error::DTB tidak ditemukan"; exit 1; }
+          echo "Using DTB: $DTB"
           cat out/arch/arm64/boot/Image.gz "$DTB" > out/arch/arm64/boot/Image.gz-dtb
           ls -lh out/arch/arm64/boot/Image.gz-dtb
 
