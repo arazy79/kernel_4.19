@@ -96,7 +96,9 @@ jobs:
           set -e
 
           # --- fs/super.c ---
-          if ! grep -q "susfs_is_sdcard_android_data_not_decrypted" fs/super.c 2>/dev/null; then
+          # Deteksi berdasarkan include susfs_def.h (BUKAN symbol name, karena symbol
+          # usage sudah ada dari hunk #2 yang sukses)
+          if ! grep -q '#include <linux/susfs_def.h>' fs/super.c 2>/dev/null; then
             echo "Fixing fs/super.c..."
             awk '
               /^static int thaw_super_locked/ && !done {
@@ -117,7 +119,7 @@ jobs:
           fi
 
           # --- fs/namespace.c ---
-          if ! grep -q "susfs_is_current_ksu_domain" fs/namespace.c 2>/dev/null; then
+          if ! grep -q '#include <linux/susfs_def.h>' fs/namespace.c 2>/dev/null; then
             echo "Fixing fs/namespace.c..."
             awk '
               /^unsigned int sysctl_mount_max/ && !done {
@@ -138,12 +140,21 @@ jobs:
             echo "fs/namespace.c sudah OK, skip"
           fi
 
-          # Verify
-          grep -q "susfs_is_sdcard_android_data_not_decrypted" fs/super.c || { echo "::error::super.c fix gagal"; exit 1; }
-          grep -q "susfs_is_current_ksu_domain" fs/namespace.c || { echo "::error::namespace.c fix gagal"; exit 1; }
-          grep -q "susfs_def.h" fs/super.c || { echo "::error::super.c susfs_def.h gagal"; exit 1; }
-          grep -q "susfs_def.h" fs/namespace.c || { echo "::error::namespace.c susfs_def.h gagal"; exit 1; }
+          # Verify: pakai include line sebagai bukti inject berhasil
+          grep -q '#include <linux/susfs_def.h>' fs/super.c     || { echo "::error::super.c: include susfs_def.h gagal"; exit 1; }
+          grep -q '#include <linux/susfs_def.h>' fs/namespace.c || { echo "::error::namespace.c: include susfs_def.h gagal"; exit 1; }
+
+          # Verify extern juga ada
+          grep -q 'extern bool susfs_is_current_ksu_domain' fs/super.c     || { echo "::error::super.c: extern susfs_is_current_ksu_domain gagal"; exit 1; }
+          grep -q 'extern bool susfs_is_current_ksu_domain' fs/namespace.c || { echo "::error::namespace.c: extern susfs_is_current_ksu_domain gagal"; exit 1; }
+
           echo "OK: manual include fix berhasil"
+
+          # Show what got injected
+          echo "=== fs/super.c (partial) ==="
+          grep -n -A1 "susfs_def.h\|susfs_is_current_ksu_domain\|susfs_is_sdcard" fs/super.c | head -20
+          echo "=== fs/namespace.c (partial) ==="
+          grep -n -A1 "susfs_def.h\|susfs_is_current_ksu_domain\|CL_COPY_MNT_NS" fs/namespace.c | head -20
 
           find . -name "*.rej" -delete || true
 
