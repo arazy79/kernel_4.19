@@ -145,7 +145,7 @@ jobs:
           python3 <<'PYEOF'
           import sys
 
-          # FIX 1: fs/namespace.c
+          # FIX 1: fs/namespace.c (vfs_create_mount)
           with open('fs/namespace.c', 'r') as f:
               c = f.read()
           if 'susfs_alloc_non_unshare_ksu_vfsmnt(fc->source' not in c:
@@ -189,28 +189,44 @@ jobs:
           else:
               print("SKIP: cmdline.c")
 
-          # FIX 3: fs/proc/task_mmu.c
+          # FIX 3: fs/proc/task_mmu.c - pagemap_read
+          # Deteksi pakai find_vma(mm, start_vaddr) — string ini HANYA ada
+          # di pagemap_read yang sudah di-patch. BUKAN false positive dari
+          # show_smap/show_smaps_rollup (yang pakai SUSFS_IS_INODE_SUS_MAP).
           with open('fs/proc/task_mmu.c', 'r') as f:
               c = f.read()
-          if 'SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))' not in c:
-              c = c.replace('\tstruct mm_struct *mm = file->private_data;\n\tstruct pagemapread pm;',
-                  '\tstruct mm_struct *mm = file->private_data;\n\tstruct pagemapread pm;\n'
-                  '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n\tstruct vm_area_struct *vma;\n#endif', 1)
-              c = c.replace(
-                  '\t\tret = mmap_read_lock_killable(mm);\n\t\tif (ret)\n\t\t\tgoto out_free;\n\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);',
-                  '\t\tret = mmap_read_lock_killable(mm);\n\t\tif (ret)\n\t\t\tgoto out_free;\n'
+          if 'find_vma(mm, start_vaddr)' not in c:
+              # Patch hunk #6 (deklarasi vma) sudah sukses sebelumnya.
+              # Tinggal tambah bypass check dengan context yang benar:
+              # mmap_read_lock_killable(mm), BUKAN down_read_killable(&mm->mmap_sem).
+              old = (
+                  '\t\tret = mmap_read_lock_killable(mm);\n'
+                  '\t\tif (ret)\n'
+                  '\t\t\tgoto out_free;\n'
+                  '\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);'
+              )
+              new = (
+                  '\t\tret = mmap_read_lock_killable(mm);\n'
+                  '\t\tif (ret)\n'
+                  '\t\t\tgoto out_free;\n'
                   '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
                   '\t\tvma = find_vma(mm, start_vaddr);\n'
                   '\t\tif (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n'
-                  '\t\t\tgoto bypass_orig_flow;\n#endif\n'
+                  '\t\t\tgoto bypass_orig_flow;\n'
+                  '#endif\n'
                   '\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);\n'
-                  '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\nbypass_orig_flow:\n#endif', 1)
-              open('fs/proc/task_mmu.c', 'w').write(c)
-              print("OK: task_mmu.c")
+                  '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                  'bypass_orig_flow:\n'
+                  '#endif'
+              )
+              if old not in c:
+                  print("ERROR: task_mmu.c pagemap anchor missing", file=sys.stderr); sys.exit(1)
+              open('fs/proc/task_mmu.c', 'w').write(c.replace(old, new, 1))
+              print("OK: task_mmu.c pagemap_read patched")
           else:
-              print("SKIP: task_mmu.c")
+              print("SKIP: task_mmu.c already complete")
 
-          # FIX 4: kernel/sys.c
+          # FIX 4: kernel/sys.c (newuname)
           with open('kernel/sys.c', 'r') as f:
               c = f.read()
           if 'susfs_spoof_uname(&tmp)' not in c:
@@ -235,7 +251,7 @@ jobs:
           echo "=== Verifikasi ==="
           grep -q "susfs_alloc_non_unshare_ksu_vfsmnt(fc->source" fs/namespace.c     || { echo "::error::namespace.c gagal"; exit 1; }
           grep -q "susfs_spoof_cmdline_or_bootconfig" fs/proc/cmdline.c               || { echo "::error::cmdline.c gagal"; exit 1; }
-          grep -q "SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))" fs/proc/task_mmu.c || { echo "::error::task_mmu.c gagal"; exit 1; }
+          grep -q "find_vma(mm, start_vaddr)" fs/proc/task_mmu.c                     || { echo "::error::task_mmu.c pagemap gagal"; exit 1; }
           grep -q "susfs_spoof_uname(&tmp)" kernel/sys.c                             || { echo "::error::sys.c gagal"; exit 1; }
           echo "OK: semua optional patch berhasil"
 
