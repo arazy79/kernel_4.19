@@ -6,12 +6,12 @@ on:
         description: 'Repo Sumber'
         required: true
         type: string
-        default: 'arazy79/asus_660_419'
+        default: 'android-kernel-tes-4.19'
       source_branch:
         description: 'Branch yang mau diambil'
         required: true
         type: string
-        default: '13'
+        default: 'rsuntk'
       new_branch_name:
         description: 'Nama branch baru di repo kamu'
         required: true
