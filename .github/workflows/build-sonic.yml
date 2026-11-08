@@ -4,25 +4,35 @@ on:
   workflow_dispatch:
     inputs:
       repo:
+        description: 'Repository kernel (format owner/repo, BUKAN full URL)'
         required: false
         default: 'arazy79/kernel_4.19'
       branch:
+        description: 'Branch / tag / commit kernel yang di-checkout'
         required: true
         default: 'a16-sonic'
       defconfig:
+        description: 'Defconfig (relatif dari arch/arm64/configs/vendor/asus/)'
         required: true
         default: 'X00TD_defconfig'
       toolchain:
+        description: 'Toolchain: default = clang+binutils Ubuntu | llvm = Neutron clang | gcc = EVA GCC'
         type: choice
         default: 'llvm'
-        options: [default, llvm, gcc]
+        options:
+          - default
+          - llvm
+          - gcc
       kcflags_w:
+        description: 'Enable KCFLAGS=-w (tekan semua warning)'
         type: boolean
         default: false
       enable_ksu:
+        description: 'Enable KernelSU + SuSFS (BakaSU dari fork sendiri)'
         type: boolean
         default: true
       bakasu_ref:
+        description: 'Ref BakaSU di FORK arazy79/BakaSU (branch/tag/SHA). Disarankan SHA penuh agar reproducible.'
         required: true
         default: 'd5e9e025b8b49155f8014684d64c91742b465f65'
 
@@ -33,6 +43,8 @@ jobs:
       TZ: Asia/Jakarta
       ARCH: arm64
       CCACHE_DIR: ${{ github.workspace }}/kernel/out/.ccache
+      CCACHE_MAXSIZE: 10G
+      CCACHE_COMPRESS: '1'
     steps:
       - name: Checkout kernel source
         uses: actions/checkout@v4
@@ -42,7 +54,18 @@ jobs:
           path: kernel
           submodules: recursive
 
-      - name: Setup BakaSU
+      # =====================================================================
+      # FIX 1: Integrasi BakaSU TANPA setup.sh (deterministic, no git pull)
+      # ---------------------------------------------------------------------
+      # setup.sh resmi menjalankan `git pull` yang bisa mengubah pin ref dan
+      # berpotensi gagal di detached HEAD. Block di bawah ini PERSIS apa yang
+      # setup.sh lakukan (symlink drivers/kernelsu + edit Makefile/Kconfig),
+      # tapi tanpa operasi git. Semua di sisi CI, repo kernel tetap bersih.
+      # Kalau tetap mau pakai setup.sh, ganti block ini dengan:
+      #   sh KernelSU/kernel/setup.sh "$BAKASU_REF"
+      #   git -C KernelSU checkout -f "$BAKASU_REF"
+      # =====================================================================
+      - name: Setup KernelSU (BakaSU fork, pin ke ref)
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         id: ksu
         working-directory: kernel
@@ -50,44 +73,99 @@ jobs:
           BAKASU_REF: ${{ github.event.inputs.bakasu_ref }}
         run: |
           set -e
-          git clone https://github.com/arazy79/BakaSU KernelSU
-          git -C KernelSU checkout "$BAKASU_REF"
+          if [ ! -d KernelSU ]; then
+            git clone https://github.com/arazy79/BakaSU KernelSU
+          fi
+          # Fetch ref persis (SHA aman walau upstream hapus branch, karena fork)
+          git -C KernelSU fetch --depth=1 origin "$BAKASU_REF" 2>/dev/null || git -C KernelSU fetch origin
+          git -C KernelSU checkout -f "$BAKASU_REF"
           KSU_SHA="$(git -C KernelSU rev-parse HEAD)"
           echo "short_sha=${KSU_SHA:0:8}" >> "$GITHUB_OUTPUT"
-          sh KernelSU/kernel/setup.sh "$BAKASU_REF"
-          [ -f drivers/kernelsu/Kconfig ] || { echo "::error::Kconfig tidak ada"; exit 1; }
-          echo "OK: BakaSU terintegrasi"
+          echo "::notice::BakaSU commit terpakai: $KSU_SHA (input: $BAKASU_REF)"
 
-      - name: Apply JackA1ltman hooks (ksu_handle_*)
+          if [ -d common/drivers ]; then DRIVER_DIR=common/drivers; else DRIVER_DIR=drivers; fi
+          ln -sf "$(realpath --relative-to="$DRIVER_DIR" "$(pwd)/KernelSU/kernel")" "$DRIVER_DIR/kernelsu"
+          grep -q kernelsu "$DRIVER_DIR/Makefile" || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> "$DRIVER_DIR/Makefile"
+          grep -q 'source "drivers/kernelsu/Kconfig"' "$DRIVER_DIR/Kconfig" || sed -i "/endmenu/i\\source \"drivers/kernelsu/Kconfig\"" "$DRIVER_DIR/Kconfig"
+
+          [ -f "$DRIVER_DIR/kernelsu/Kconfig" ] || { echo "::error::$DRIVER_DIR/kernelsu/Kconfig tidak ada"; exit 1; }
+          grep -q kernelsu "$DRIVER_DIR/Makefile" || { echo "::error::hook Makefile KSU hilang"; exit 1; }
+          echo "OK: BakaSU terintegrasi (driver_dir=$DRIVER_DIR)"
+
+      # =====================================================================
+      # FIX 2: SuSFS inline hook + header self-heal + verifikasi yang BENAR
+      # ---------------------------------------------------------------------
+      # Penyebab error kamu: skrip susfs_inline_hook_patches.sh SAMA SEKALI
+      # tidak mem-patch fs/namespace.c. Daftar file yang dia patch:
+      #   fs/exec.c, fs/open.c, fs/read_write.c, fs/stat.c, fs/namei.c,
+      #   drivers/input/input.c, security/security.c (skip 4.19),
+      #   security/selinux/hooks.c, security/selinux/ss/services.c,
+      #   kernel/reboot.c, kernel/sys.c (conditional).
+      # Jadi `grep -q CONFIG_KSU_SUSFS fs/namespace.c` memang PASTI gagal.
+      # Di sini kita verifikasi marker yang sesuai, dan tambah symlink
+      # header susfs_def.h (setup.sh tidak memasangnya ke include/linux/).
+      # =====================================================================
+      - name: Apply SuSFS inline hooks + verifikasi
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
         run: |
           set -e
           BUILDER_SHA=dcd789634247c77d8549a42aef232c680a905585
           RAW="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/$BUILDER_SHA/Patches"
-          curl -fLSs -o /tmp/hooks.sh "$RAW/susfs_inline_hook_patches.sh"
-          bash /tmp/hooks.sh ./ | tee /tmp/hook.log
-          for f in fs/exec.c fs/open.c fs/read_write.c fs/stat.c drivers/input/input.c kernel/reboot.c kernel/sys.c; do
-            grep -q "ksu_" "$f" || { echo "::error::ksu hook missing di $f"; exit 1; }
-          done
-          echo "OK: JackA1ltman hooks terpasang"
+          curl -fLSs --retry 3 --retry-delay 2 -o /tmp/susfs_inline_hook_patches.sh "$RAW/susfs_inline_hook_patches.sh"
+          bash /tmp/susfs_inline_hook_patches.sh ./ | tee /tmp/hook.log
 
-      - name: Apply SuSFS kernel patch
-        if: ${{ github.event.inputs.enable_ksu == 'true' }}
-        working-directory: kernel
-        run: |
-          set -e
-          PATCH_FILE="susfs_x00td_419.patch"
-          [ -f "$PATCH_FILE" ] || { echo "::error::$PATCH_FILE tidak ada di root kernel repo"; ls -la | head -30; exit 1; }
-          echo "Pakai patch: $PATCH_FILE"
-          patch -p1 --forward --no-backup-if-mismatch < "$PATCH_FILE" || true
-          if find . -name "*.rej" | grep -q .; then
-            echo "::warning::ada hunk gagal:"; find . -name "*.rej"
+          if grep -qiE "patch failed|FAILED" /tmp/hook.log; then
+            echo "::error::Ada inline hook yang gagal, cek log di atas"
+            exit 1
           fi
-          [ -f fs/susfs.c ] || { echo "::error::fs/susfs.c tidak ada"; exit 1; }
-          [ -f include/linux/susfs.h ] || { echo "::error::susfs.h tidak ada"; exit 1; }
-          [ -f include/linux/susfs_def.h ] || { echo "::error::susfs_def.h tidak ada"; exit 1; }
-          echo "OK: SuSFS kernel patch applied"
+
+          # --- Pastikan header susfs_def.h bisa di-include via <linux/susfs_def.h> ---
+          if [ ! -f include/linux/susfs_def.h ]; then
+            HDR="$(find KernelSU -type f -name susfs_def.h | head -n1)"
+            if [ -n "$HDR" ]; then
+              mkdir -p include/linux
+              ln -sf "$(realpath --relative-to=include/linux "$HDR")" include/linux/susfs_def.h
+              echo "::notice::susfs_def.h di-link dari $HDR"
+            else
+              echo "::error::susfs_def.h tidak ditemukan di tree BakaSU. #include <linux/susfs_def.h> di fs/exec.c akan gagal compile. Ambil header dari simonpunk/susfs4ksu (versi 2.3.00+) atau folder Patch/ builder, lalu taruh di include/linux/."
+              exit 1
+            fi
+          fi
+
+          # --- Verifikasi per file dengan marker yang BENAR ---
+          check() {
+            if grep -q "$2" "$1"; then
+              echo "[OK] $1 -> $2"
+            else
+              echo "::error::Hook '$2' TIDAK masuk di $1"
+              exit 1
+            fi
+          }
+          check fs/exec.c                 ksu_handle_execveat_sucompat
+          check fs/open.c                 ksu_handle_faccessat
+          check fs/stat.c                 ksu_handle_stat
+          check drivers/input/input.c     ksu_handle_input_handle_event
+          check kernel/reboot.c           ksu_handle_sys_reboot
+          check security/selinux/hooks.c  security_secid_to_secctx
+          grep -qE 'ksu_handle_sys_read|ksu_init_rc_hook' fs/read_write.c \
+            || { echo "::error::hook initrc (read) tidak masuk di fs/read_write.c"; exit 1; }
+
+          # kernel/sys.c hook CONDITIONAL — hanya jika BakaSU punya ksu_handle_setresuid
+          if grep -rq ksu_handle_setresuid drivers/kernelsu/ 2>/dev/null; then
+            check kernel/sys.c ksu_handle_setresuid
+          else
+            echo "::notice::ksu_handle_setresuid tidak ada di BakaSU ini, hook kernel/sys.c di-skip (wajar)"
+          fi
+
+          # Konsistensi filename_lookup: kalau open.c/stat.c deklarasi extern,
+          # fs/namei.c TIDAK boleh masih static (nanti undefined reference saat link)
+          if grep -q 'extern int filename_lookup' fs/open.c \
+             && grep -qE '^static[[:space:]]+int[[:space:]]+filename_lookup' fs/namei.c; then
+            echo "::error::filename_lookup masih static di fs/namei.c tapi dipanggil extern dari fs/open.c -> link error"
+            exit 1
+          fi
+          echo "OK: Semua SuSFS inline hook terverifikasi (fs/namespace.c memang TIDAK perlu di-patch oleh skrip ini)"
 
       - name: Select toolchain
         id: tc
@@ -95,20 +173,33 @@ jobs:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
         run: |
           case "$TOOLCHAIN" in
-            llvm) echo "dir=$HOME/neutron-clang" >> "$GITHUB_OUTPUT"; echo "key=llvm-24-neutron-06092026" >> "$GITHUB_OUTPUT"; echo "out_prefix=kernel-out-llvm-" >> "$GITHUB_OUTPUT";;
-            gcc)  echo "dir=$HOME/gcc-arm64" >> "$GITHUB_OUTPUT"; echo "key=gcc-eva-arm64-06052026" >> "$GITHUB_OUTPUT"; echo "out_prefix=kernel-out-gcc-" >> "$GITHUB_OUTPUT";;
-            *)    echo "dir=" >> "$GITHUB_OUTPUT"; echo "key=" >> "$GITHUB_OUTPUT"; echo "out_prefix=kernel-build-" >> "$GITHUB_OUTPUT";;
+            llvm)
+              echo "dir=$HOME/neutron-clang" >> "$GITHUB_OUTPUT"
+              echo "key=llvm-neutron-06092026" >> "$GITHUB_OUTPUT"
+              echo "out_prefix=kernel-out-llvm-" >> "$GITHUB_OUTPUT"
+              ;;
+            gcc)
+              echo "dir=$HOME/gcc-arm64" >> "$GITHUB_OUTPUT"
+              echo "key=gcc-eva-arm64-06052026" >> "$GITHUB_OUTPUT"
+              echo "out_prefix=kernel-out-gcc-" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "dir=" >> "$GITHUB_OUTPUT"
+              echo "key=clang-ubuntu" >> "$GITHUB_OUTPUT"
+              echo "out_prefix=kernel-build-" >> "$GITHUB_OUTPUT"
+              ;;
           esac
+          echo "Toolchain dipilih: $TOOLCHAIN"
 
+      # Cache HANYA ccache (jangan cache kernel/out, bisa bikin stale object
+      # saat config KSU berubah antar run).
       - name: Restore ccache
         uses: actions/cache@v4
         with:
-          path: |
-            kernel/out/.ccache
-            kernel/out
-          key: ${{ steps.tc.outputs.out_prefix }}${{ github.run_id }}
+          path: kernel/out/.ccache
+          key: ${{ steps.tc.outputs.out_prefix }}ccache-${{ github.run_id }}
           restore-keys: |
-            ${{ steps.tc.outputs.out_prefix }}
+            ${{ steps.tc.outputs.out_prefix }}ccache-
 
       - name: Cache toolchain
         id: tc_cache
@@ -122,7 +213,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick libncurses-dev lib32readline-dev lib32z1-dev liblz4-tool libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev
-          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi clang llvm lld zstd wget xz-utils
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+          sudo apt-get install -y clang llvm lld
+          sudo apt-get install -y zstd wget xz-utils
 
       - name: Fetch toolchain
         if: ${{ github.event.inputs.toolchain != 'default' && steps.tc_cache.outputs.cache-hit != 'true' }}
@@ -130,20 +223,22 @@ jobs:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
         run: |
           if [ "$TOOLCHAIN" = "llvm" ]; then
+            echo "Downloading Neutron clang..."
             mkdir -p "$HOME/neutron-clang"
             wget -q "https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/06092026/neutron-clang-06092026.tar.zst" -O /tmp/clang.tar.zst
             tar -xf /tmp/clang.tar.zst -C "$HOME/neutron-clang"
             rm -f /tmp/clang.tar.zst
-            [ -x "$HOME/neutron-clang/bin/clang" ] || { echo "::error::clang tidak ada"; exit 1; }
+            [ -x "$HOME/neutron-clang/bin/clang" ] || { echo "::error::bin/clang tidak ada"; exit 1; }
           else
+            echo "Downloading EVA GCC..."
             cd "$HOME"
             wget -q "https://github.com/mvaisakh/gcc-build/releases/download/06052026/eva-gcc-arm64-06052026.xz" -O gcc.tar.xz
             tar -xf gcc.tar.xz
             rm -f gcc.tar.xz
-            [ -d "$HOME/gcc-arm64/bin" ] || { echo "::error::gcc-arm64/bin tidak ada"; exit 1; }
+            [ -d "$HOME/gcc-arm64/bin" ] || { echo "::error::folder gcc-arm64/bin tidak ada"; exit 1; }
           fi
 
-      - name: Setup toolchain env
+      - name: Setup toolchain environment
         env:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
           KCFLAGS_W: ${{ github.event.inputs.kcflags_w }}
@@ -161,7 +256,10 @@ jobs:
               for p in aarch64-linux-android- aarch64-linux-gnu- aarch64-elf- aarch64-linux-; do
                 if [ -f "$TC/bin/${p}gcc" ]; then prefix="$p"; break; fi
               done
-              if [ -z "$prefix" ]; then echo "::error::gcc aarch64 tidak ditemukan"; exit 1; fi
+              if [ -z "$prefix" ]; then
+                echo "::error::gcc aarch64 tidak ditemukan di $TC/bin"
+                exit 1
+              fi
               echo "$TC/bin" >> "$GITHUB_PATH"
               echo "TC_MAKE_ARGS=CROSS_COMPILE=$TC/bin/$prefix CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               ;;
@@ -175,9 +273,18 @@ jobs:
             echo "TC_KCFLAGS=-Wno-error" >> "$GITHUB_ENV"
           fi
 
-      - name: Prepare output
+      - name: Prepare output directory
         run: mkdir -p kernel/out
 
+      # =====================================================================
+      # FIX 3: Defconfig — paksa choice hook mode = KSU_SUSFS
+      # ---------------------------------------------------------------------
+      # Di BakaSU (commit d5e9e02), hook mode adalah `choice` default
+      # KSU_TRACEPOINT_HOOK (GKI2 only). Kalau cuma set CONFIG_KSU_SUSFS=y
+      # tanpa mematikan dua lainnya, oldconfig bisa jatuh ke default.
+      # Kita tambah "# CONFIG_... is not set" untuk memaksa choice.
+      # Pakai olddefconfig (non-interactive) ganti yes "" | oldconfig.
+      # =====================================================================
       - name: Make defconfig
         working-directory: kernel
         env:
@@ -185,8 +292,11 @@ jobs:
         run: |
           cp "arch/arm64/configs/vendor/asus/${{ github.event.inputs.defconfig }}" out/.config
           if [ "$ENABLE_KSU" = "true" ]; then
+            echo "KernelSU: ON (BakaSU + SuSFS Inline Hook)"
             {
               echo "CONFIG_KSU=y"
+              echo "# CONFIG_KSU_TRACEPOINT_HOOK is not set"
+              echo "# CONFIG_KSU_MANUAL_HOOK is not set"
               echo "CONFIG_KSU_SUSFS=y"
               echo "CONFIG_KSU_SUSFS_SUS_PATH=y"
               echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
@@ -198,12 +308,18 @@ jobs:
               echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
               echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
             } >> out/.config
+          else
+            echo "KernelSU: OFF"
           fi
-          yes "" | make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS oldconfig
+          make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS olddefconfig
           if [ "$ENABLE_KSU" = "true" ]; then
             grep -q '^CONFIG_KSU=y' out/.config || { echo "::error::CONFIG_KSU tidak aktif"; exit 1; }
-            grep -q '^CONFIG_KSU_SUSFS=y' out/.config || { echo "::error::CONFIG_KSU_SUSFS tidak aktif"; exit 1; }
-            grep -E '^CONFIG_KSU' out/.config
+            grep -q '^CONFIG_KSU_SUSFS=y' out/.config || { echo "::error::CONFIG_KSU_SUSFS tidak aktif — dependency KSU_SUSFS (THREAD_INFO_IN_TASK && 64BIT) mungkin tidak terpenuhi"; exit 1; }
+            grep -q '^CONFIG_THREAD_INFO_IN_TASK=y' out/.config || echo "::warning::THREAD_INFO_IN_TASK tidak aktif di defconfig; KSU_SUSFS butuh ini (arm64 4.19 biasanya aktif, cek kalau gagal)"
+            echo "--- Hook mode terpilih ---"
+            grep -E '^CONFIG_KSU(_TRACEPOINT_HOOK|_MANUAL_HOOK|_SUSFS)?=' out/.config || true
+            echo "--- Semua CONFIG_KSU_SUSFS_* ---"
+            grep -E '^CONFIG_KSU_SUSFS' out/.config || true
           fi
 
       - name: Build kernel
@@ -212,22 +328,25 @@ jobs:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
         run: |
           echo "CPU cores: $(nproc)"
+          ccache -z || true
           if [ "$TOOLCHAIN" != "gcc" ]; then
             make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS CC="ccache clang" KCFLAGS="$TC_KCFLAGS" -j"$(nproc)"
           else
             make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS KCFLAGS="$TC_KCFLAGS" -j"$(nproc)"
           fi
+          echo "--- ccache stats ---"
+          ccache -s || true
 
-      - name: Verify KSU & SuSFS di System.map
+      - name: Verify KernelSU & SuSFS di hasil build
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
         continue-on-error: true
         run: |
           grep -E '^CONFIG_KSU' out/.config || true
           if grep -qi "ksu" out/System.map && grep -qi "susfs" out/System.map; then
-            echo "OK: simbol ksu + susfs ada"
+            echo "OK: simbol ksu + susfs ada di System.map"
           else
-            echo "::warning::simbol tidak ditemukan"
+            echo "::warning::simbol ksu/susfs tidak ditemukan di System.map, KSU/SuSFS kemungkinan tidak aktif"
             exit 1
           fi
 
@@ -238,14 +357,18 @@ jobs:
           DTB=$(find out/arch/arm64/boot/dts -iname "*x00td*.dtb" | head -1)
           [ -z "$DTB" ] && DTB=$(find out/arch/arm64/boot/dts -name "sdm636.dtb" | head -1)
           [ -z "$DTB" ] && DTB=$(find out/arch/arm64/boot/dts -name "sdm660.dtb" | head -1)
-          [ -z "$DTB" ] && { echo "::error::DTB tidak ditemukan"; exit 1; }
+          if [ -z "$DTB" ]; then
+            echo "::error::DTB tidak ditemukan (cari manual: find out/arch/arm64/boot/dts -name '*.dtb')"
+            exit 1
+          fi
           echo "Using DTB: $DTB"
           cat out/arch/arm64/boot/Image.gz "$DTB" > out/arch/arm64/boot/Image.gz-dtb
-          ls -lh out/arch/arm64/boot/Image.gz-dtb
+          ls -lh out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb
 
       - name: Upload Image.gz-dtb
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-X00TD-BakaSU${{ steps.ksu.outputs.short_sha && format('-{0}', steps.ksu.outputs.short_sha) || '-NOKSU' }}-${{ github.event.inputs.toolchain }}-${{ github.run_id }}
-          path: kernel/out/arch/arm64/boot/Image.gz-dtb
+          name: Kernel-X00TD-4.19-BakaSU${{ steps.ksu.outputs.short_sha && format('-{0}', steps.ksu.outputs.short_sha) || '-NOKSU' }}-${{ github.event.inputs.toolchain }}-${{ github.run_id }}
+          path: |
+            kernel/out/arch/arm64/boot/Image.gz-dtb
