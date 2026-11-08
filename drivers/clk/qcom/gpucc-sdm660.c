@@ -135,7 +135,8 @@ static struct clk_init_data gpu_clks_init[] = {
 	[0] = {
 		.name = "gfx3d_clk_src",
 		.parent_names = gpucc_parent_names_1,
-		.num_parents = 3,
+		/* REVISI: sebelumnya hardcoded 3 (bug), padahal parent_names_1 isinya 5 */
+		.num_parents = ARRAY_SIZE(gpucc_parent_names_1),
 		.ops = &clk_gfx3d_src_ops,
 		.flags = CLK_SET_RATE_PARENT | CLK_OPS_PARENT_ENABLE,
 	},
@@ -150,7 +151,6 @@ static struct clk_init_data gpu_clks_init[] = {
 		.vdd_class = &vdd_gfx,
 	},
 };
-
 /*
  * Frequencies and PLL configuration
  * The PLL source would be to ping-pong between GPU-PLL0
@@ -170,22 +170,22 @@ static struct clk_init_data gpu_clks_init[] = {
  */
 
 static const struct freq_tbl ftbl_gfx3d_clk_src[] = {
-	F_GFX( 19200000, 0,  1, 0, 0,         0),
+	F_GFX( 19200000, 0,  1, 0, 0,          0),
 	F_GFX(160000000, 0,  2, 0, 0,  640000000),
 	F_GFX(266000000, 0,  2, 0, 0,  532000000),
 	F_GFX(370000000, 0,  2, 0, 0,  740000000),
-	F_GFX(430000000, 0,  2, 0, 0,  860000000),
 	F_GFX(465000000, 0,  2, 0, 0,  860000000),
-	F_GFX(585000000, 0,  2, 0, 0,  860000000),
-	F_GFX(588000000, 0,  2, 0, 0,  860000000),
-	F_GFX(647000000, 0,  2, 0, 0,  860000000),
-	F_GFX(700000000, 0,  2, 0, 0,  860000000),
-	F_GFX(850000000, 0,  2, 0, 0,  860000000),
+	F_GFX(600000000, 0,  2, 0, 0, 860000000),
+	F_GFX(647000000, 0,  2, 0, 0, 860000000),
+	F_GFX(700000000, 0,  2, 0, 0, 860000000),
+	F_GFX(750000000, 0,  2, 0, 0, 860000000),
+	F_GFX(850000000, 0,  2, 0, 0, 860000000),
+	F_GFX(950000000, 0,  2, 0, 0, 860000000),
 	{ }
 };
 
 static const struct freq_tbl ftbl_gfx3d_clk_src_630[] = {
-	F_GFX( 19200000, 0,  1, 0, 0,         0),
+	F_GFX( 19200000, 0,  1, 0, 0,          0),
 	F_GFX(160000000, 0,  2, 0, 0,  640000000),
 	F_GFX(240000000, 0,  2, 0, 0,  480000000),
 	F_GFX(370000000, 0,  2, 0, 0,  740000000),
@@ -193,7 +193,6 @@ static const struct freq_tbl ftbl_gfx3d_clk_src_630[] = {
 	F_GFX(588000000, 0,  2, 0, 0, 1176000000),
 	F_GFX(647000000, 0,  2, 0, 0, 1294000000),
 	F_GFX(700000000, 0,  2, 0, 0, 1400000000),
-	F_GFX(775000000, 0,  2, 0, 0, 1550000000),
 	{ }
 };
 
@@ -319,76 +318,61 @@ static struct clk_regmap *gpucc_660_clocks[] = {
 	[RBBMTIMER_CLK_SRC] = &rbbmtimer_clk_src.clkr,
 	[GPUCC_CXO_CLK] = &gpucc_cxo_clk.clkr,
 };
-
-static const struct regmap_config gpucc_660_regmap_config = {
-	.reg_bits	= 32,
-	.reg_stride	= 4,
-	.val_bits	= 32,
-	.max_register	= 0x9034,
-	.fast_io	= true,
-};
-
-static const struct qcom_cc_desc gpucc_660_desc = {
-	.config = &gpucc_660_regmap_config,
-	.clks = gpucc_660_clocks,
-	.num_clks = ARRAY_SIZE(gpucc_660_clocks),
-};
-
-static const struct of_device_id gpucc_660_match_table[] = {
-	{ .compatible = "qcom,gpucc-sdm660" },
-	{ .compatible = "qcom,gpucc-sdm630" },
-	{ }
-};
-MODULE_DEVICE_TABLE(of, gpucc_660_match_table);
-
 static int of_get_fmax_vdd_class(struct platform_device *pdev,
 		struct clk_hw *hw, char *prop_name, u32 index)
 {
 	struct device_node *of = pdev->dev.of_node;
-	int prop_len, i, j;
+	int prop_len, i, j, num, ret;
 	struct clk_vdd_class *vdd = hw->init->vdd_class;
-	int num = vdd->num_regulators + 1;
 	u32 *array;
 
-	if (!of_find_property(of, prop_name, &prop_len)) {
-		dev_err(&pdev->dev, "missing %s\n", prop_name);
+	num = vdd->num_regulators + 1;
+
+	prop_len = of_property_count_u32_elems(of, prop_name);
+	if (prop_len <= 0) {
+		dev_err(&pdev->dev, "missing or invalid %s\n", prop_name);
 		return -EINVAL;
 	}
 
-	prop_len /= sizeof(u32);
 	if (prop_len % num) {
-		dev_err(&pdev->dev, "bad length %d\n", prop_len);
+		dev_err(&pdev->dev, "bad length %d for %s\n",
+			prop_len, prop_name);
 		return -EINVAL;
 	}
 
 	prop_len /= num;
-	vdd->level_votes = devm_kzalloc(&pdev->dev, prop_len * sizeof(int),
+
+	vdd->level_votes = devm_kcalloc(&pdev->dev, prop_len, sizeof(int),
 					GFP_KERNEL);
 	if (!vdd->level_votes)
 		return -ENOMEM;
 
-	vdd->vdd_uv = devm_kzalloc(&pdev->dev,
-			prop_len * sizeof(int) * (num - 1), GFP_KERNEL);
+	vdd->vdd_uv = devm_kcalloc(&pdev->dev,
+			prop_len * (num - 1), sizeof(int), GFP_KERNEL);
 	if (!vdd->vdd_uv)
 		return -ENOMEM;
 
-	gpu_clks_init[index].rate_max = devm_kzalloc(&pdev->dev, prop_len *
+	gpu_clks_init[index].rate_max = devm_kcalloc(&pdev->dev, prop_len,
 					sizeof(unsigned long), GFP_KERNEL);
 	if (!gpu_clks_init[index].rate_max)
 		return -ENOMEM;
 
-	array = kzalloc(prop_len * sizeof(u32) * num,
-				GFP_KERNEL);
+	array = kcalloc(prop_len, num * sizeof(u32), GFP_KERNEL);
 	if (!array)
 		return -ENOMEM;
 
-	of_property_read_u32_array(of, prop_name, array, prop_len * num);
+	ret = of_property_read_u32_array(of, prop_name, array, prop_len * num);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to read %s\n", prop_name);
+		kfree(array);
+		return ret;
+	}
+
 	for (i = 0; i < prop_len; i++) {
 		gpu_clks_init[index].rate_max[i] = array[num * i];
-		for (j = 1; j < num; j++) {
+		for (j = 1; j < num; j++)
 			vdd->vdd_uv[(num - 1) * i + (j - 1)] =
 						array[num * i + j];
-		}
 	}
 
 	kfree(array);
@@ -399,21 +383,38 @@ static int of_get_fmax_vdd_class(struct platform_device *pdev,
 	return 0;
 }
 
+/* Per-SoC match data, menggantikan runtime of_device_is_compatible() */
+struct gpucc_660_match_data {
+	const struct freq_tbl *freq_tbl;
+	unsigned long pll_fmax;
+};
+
+static const struct gpucc_660_match_data sdm660_data = {
+	.freq_tbl = ftbl_gfx3d_clk_src,
+	.pll_fmax = 1500000000,
+};
+
+static const struct gpucc_660_match_data sdm630_data = {
+	.freq_tbl = ftbl_gfx3d_clk_src_630,
+	.pll_fmax = 1550000000,
+};
+
+static const struct of_device_id gpucc_660_match_table[] = {
+	{ .compatible = "qcom,gpucc-sdm660", .data = &sdm660_data },
+	{ .compatible = "qcom,gpucc-sdm630", .data = &sdm630_data },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, gpucc_660_match_table);
+
 static int gpucc_660_probe(struct platform_device *pdev)
 {
+	const struct gpucc_660_match_data *data;
 	struct regmap *regmap;
-	struct resource *res;
 	void __iomem *base;
-	bool is_630 = false;
 	int ret;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (res == NULL) {
-		dev_err(&pdev->dev, "Failed to get resources\n");
-		return -EINVAL;
-	}
-
-	base = devm_ioremap(&pdev->dev, res->start, resource_size(res));
+	/* REVISI: pakai devm_platform_ioremap_resource() */
+	base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(base))
 		return PTR_ERR(base);
 
@@ -448,20 +449,30 @@ static int gpucc_660_probe(struct platform_device *pdev)
 		return PTR_ERR(vdd_gfx.regulator[0]);
 	}
 
-	is_630 = of_device_is_compatible(pdev->dev.of_node,
-					"qcom,gpucc-sdm630");
-	if (is_630) {
-		gpu_pll0_pll_out_main.clkr.hw.init->rate_max[VDD_DIG_LOW_L1]
-						= 1550000000;
-		gpu_pll1_pll_out_main.clkr.hw.init->rate_max[VDD_DIG_LOW_L1]
-						= 1550000000;
-		/* Add new frequency table */
-		gfx3d_clk_src.freq_tbl = ftbl_gfx3d_clk_src_630;
+	/* REVISI: match data menggantikan of_device_is_compatible() */
+	data = of_device_get_match_data(&pdev->dev);
+	if (!data) {
+		dev_err(&pdev->dev, "no match data\n");
+		return -EINVAL;
 	}
 
+	if (data->pll_fmax != sdm660_data.pll_fmax) {
+		gpu_pll0_pll_out_main.clkr.hw.init->rate_max[VDD_DIG_LOW_L1]
+						= data->pll_fmax;
+		gpu_pll1_pll_out_main.clkr.hw.init->rate_max[VDD_DIG_LOW_L1]
+						= data->pll_fmax;
+	}
+
+	if (data->freq_tbl != ftbl_gfx3d_clk_src)
+		gfx3d_clk_src.freq_tbl = data->freq_tbl;
+
 	/* GFX rail fmax data linked to branch clock */
-	of_get_fmax_vdd_class(pdev, &gpucc_gfx3d_clk.clkr.hw,
-						"qcom,gfxfreq-corner", 1);
+	ret = of_get_fmax_vdd_class(pdev, &gpucc_gfx3d_clk.clkr.hw,
+					"qcom,gfxfreq-corner", 1);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to parse qcom,gfxfreq-corner\n");
+		return ret;
+	}
 
 	clk_alpha_pll_configure(&gpu_pll0_pll_out_main, regmap,
 							&gpu_pll0_config);
@@ -474,11 +485,16 @@ static int gpucc_660_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	clk_prepare_enable(gpucc_cxo_clk.clkr.hw.clk);
+	/* REVISI: cek return clk_prepare_enable() */
+	ret = clk_prepare_enable(gpucc_cxo_clk.clkr.hw.clk);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to enable cxo clock\n");
+		return ret;
+	}
 
 	dev_info(&pdev->dev, "Registered GPUCC clocks\n");
 
-	return ret;
+	return 0;
 }
 
 static struct platform_driver gpucc_660_driver = {
@@ -536,7 +552,7 @@ static int gpu_660_probe(struct platform_device *pdev)
 
 	dev_info(&pdev->dev, "Registered GPU RBCPR clocks\n");
 
-	return ret;
+	return 0;
 }
 
 static struct platform_driver gpu_660_driver = {
