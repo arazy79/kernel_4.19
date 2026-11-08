@@ -6,7 +6,7 @@ on:
         description: 'Repo Sumber'
         required: true
         type: string
-        default: 'android-kernel-tes-4.19'
+        default: '79/android-kernel-tes-4.19'
       source_branch:
         description: 'Branch yang mau diambil'
         required: true
@@ -16,6 +16,7 @@ on:
         description: 'Nama branch baru di repo kamu'
         required: true
         type: string
+        default: 'rsuntkxx'
 
 permissions:
   contents: write
