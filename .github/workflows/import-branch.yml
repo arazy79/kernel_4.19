@@ -6,7 +6,7 @@ on:
         description: 'Repo Sumber'
         required: true
         type: string
-        default: '79/android-kernel-tes-4.19'
+        default: 'arazy79/android-kernel-tes-4.19'
       source_branch:
         description: 'Branch yang mau diambil'
         required: true
