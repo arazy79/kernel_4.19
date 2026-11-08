@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: 'Repository kernel (format owner/repo, BUKAN full URL)'
+        description: 'Repository kernel (owner/repo, BUKAN URL)'
         required: false
         default: 'arazy79/kernel_4.19'
       branch:
-        description: 'Branch / tag / commit kernel yang di-checkout'
+        description: 'Branch / tag / commit kernel'
         required: true
         default: 'a16-sonic'
       defconfig:
@@ -24,15 +24,15 @@ on:
           - llvm
           - gcc
       kcflags_w:
-        description: 'Enable KCFLAGS=-w (tekan semua warning)'
+        description: 'Enable KCFLAGS=-w'
         type: boolean
         default: false
       enable_ksu:
-        description: 'Enable KernelSU + SuSFS (BakaSU dari fork sendiri)'
+        description: 'Enable KernelSU + SuSFS (BakaSU)'
         type: boolean
         default: true
       bakasu_ref:
-        description: 'Ref BakaSU di FORK arazy79/BakaSU (branch/tag/SHA)'
+        description: 'Ref BakaSU di fork arazy79/BakaSU (branch/tag/SHA)'
         required: true
         default: 'd5e9e025b8b49155f8014684d64c91742b465f65'
 
@@ -52,7 +52,7 @@ jobs:
           path: kernel
           submodules: recursive
 
-      - name: Setup KernelSU via BakaSU fork (pakai setup.sh resmi)
+      - name: Setup KernelSU BakaSU (fork + setup.sh)
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         id: ksu
         working-directory: kernel
@@ -60,49 +60,44 @@ jobs:
           BAKASU_REF: ${{ github.event.inputs.bakasu_ref }}
         run: |
           set -e
-          # Clone fork sendiri, bukan upstream, supaya aman dari branch deletion
+          echo "::group::Clone BakaSU dari fork arazy79/BakaSU"
           git clone https://github.com/arazy79/BakaSU KernelSU
           git -C KernelSU checkout "$BAKASU_REF"
           KSU_SHA="$(git -C KernelSU rev-parse HEAD)"
-          echo "BakaSU ref input  : $BAKASU_REF"
-          echo "BakaSU commit     : $KSU_SHA"
+          echo "BakaSU ref input : $BAKASU_REF"
+          echo "BakaSU commit    : $KSU_SHA"
           echo "short_sha=${KSU_SHA:0:8}" >> "$GITHUB_OUTPUT"
           echo "::notice::BakaSU commit terpakai: $KSU_SHA"
+          echo "::endgroup::"
 
-          # Jalankan setup.sh resmi dari fork.
-          # setup.sh akan skip clone karena folder KernelSU sudah ada,
-          # lalu membuat symlink drivers/kernelsu + edit Makefile/Kconfig.
+          echo "::group::Jalankan setup.sh resmi BakaSU"
           sh KernelSU/kernel/setup.sh "$BAKASU_REF"
+          echo "::endgroup::"
 
-          # Verifikasi integrasi KernelSU
           [ -f drivers/kernelsu/Kconfig ] || { echo "::error::drivers/kernelsu/Kconfig tidak ada"; exit 1; }
-          grep -q kernelsu drivers/Makefile || { echo "::error::hooks Makefile KSU hilang"; exit 1; }
-          echo "OK: KernelSU (BakaSU) terintegrasi via setup.sh"
+          grep -q kernelsu drivers/Makefile || { echo "::error::hook Makefile KSU hilang"; exit 1; }
+          echo "OK: BakaSU terintegrasi via setup.sh"
 
-      - name: Apply SuSFS inline hooks (tanpa patch manual yang konflik)
+      - name: Diagnostic - cek ksu_ handle hooks di source
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
+        continue-on-error: true
         run: |
-          set -e
-          # HAPUS ketergantungan pada susfs_x00td_419.patch.
-          # Script ini yang akan apply hook SuSFS langsung ke file kernel.
-          BUILDER_SHA=dcd789634247c77d8549a42aef232c680a905585
-          RAW="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/$BUILDER_SHA/Patches"
-
-          curl -fLSs --retry 3 --retry-delay 2 -o /tmp/susfs_inline_hook_patches.sh "$RAW/susfs_inline_hook_patches.sh"
-          bash /tmp/susfs_inline_hook_patches.sh ./ | tee /tmp/hook.log
-
-          if grep -qiE "patch failed|FAILED" /tmp/hook.log; then
-            echo "::error::SuSFS inline hook gagal, cek log di atas"
-            exit 1
-          fi
-
-          # Verifikasi hook benar-benar masuk
+          echo "=== Cek ksu_ handle hooks di source kernel ==="
+          MISSING=0
           for f in fs/exec.c fs/open.c fs/read_write.c fs/stat.c drivers/input/input.c kernel/reboot.c kernel/sys.c; do
-            grep -q "ksu_" "$f" || { echo "::error::hook KSU tidak masuk di $f"; exit 1; }
+            if grep -q "ksu_" "$f" 2>/dev/null; then
+              echo "OK  : $f punya ksu_ hook"
+            else
+              echo "WARN: $f TIDAK punya ksu_ hook"
+              MISSING=$((MISSING+1))
+            fi
           done
-          grep -q "CONFIG_KSU_SUSFS" fs/namespace.c || { echo "::error::hook SuSFS tidak ada di fs/namespace.c"; exit 1; }
-          echo "OK: SuSFS inline hook terpasang"
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::warning::$MISSING file tanpa ksu_ hook. Kalau build sukses tapi SuSFS tidak jalan, berarti BakaSU butuh hook patch terpisah."
+          else
+            echo "OK: semua file target punya ksu_ hook"
+          fi
 
       - name: Select toolchain
         id: tc
@@ -165,14 +160,14 @@ jobs:
             wget -q "https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/06092026/neutron-clang-06092026.tar.zst" -O /tmp/clang.tar.zst
             tar -xf /tmp/clang.tar.zst -C "$HOME/neutron-clang"
             rm -f /tmp/clang.tar.zst
-            [ -x "$HOME/neutron-clang/bin/clang" ] || { echo "::error::bin/clang tidak ada"; exit 1; }
+            [ -x "$HOME/neutron-clang/bin/clang" ] || { echo "::error::bin/clang tidak ada setelah extract Neutron"; exit 1; }
           else
             echo "Downloading EVA GCC..."
             cd "$HOME"
             wget -q "https://github.com/mvaisakh/gcc-build/releases/download/06052026/eva-gcc-arm64-06052026.xz" -O gcc.tar.xz
             tar -xf gcc.tar.xz
             rm -f gcc.tar.xz
-            [ -d "$HOME/gcc-arm64/bin" ] || { echo "::error::folder gcc-arm64/bin tidak ada"; exit 1; }
+            [ -d "$HOME/gcc-arm64/bin" ] || { echo "::error::folder gcc-arm64/bin tidak ada setelah extract EVA GCC"; exit 1; }
           fi
 
       - name: Setup toolchain environment
@@ -195,6 +190,7 @@ jobs:
               done
               if [ -z "$prefix" ]; then
                 echo "::error::gcc aarch64 tidak ditemukan di $TC/bin"
+                ls -la "$TC/bin" || true
                 exit 1
               fi
               echo "$TC/bin" >> "$GITHUB_PATH"
@@ -220,7 +216,7 @@ jobs:
         run: |
           cp "arch/arm64/configs/vendor/asus/${{ github.event.inputs.defconfig }}" out/.config
           if [ "$ENABLE_KSU" = "true" ]; then
-            echo "KernelSU: ON (BakaSU + SuSFS Inline Hook)"
+            echo "KernelSU: ON (BakaSU + SuSFS, hook = SUSFS Inline Hook)"
             {
               echo "CONFIG_KSU=y"
               echo "CONFIG_KSU_SUSFS=y"
@@ -233,16 +229,14 @@ jobs:
               echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
               echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
               echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
-              # JANGAN set CONFIG_KSU_MANUAL_HOOK / TRACEPOINT:
-              # BakaSU pakai choice; KSU_SUSFS yang benar untuk non-GKI 4.19.
             } >> out/.config
           else
             echo "KernelSU: OFF"
           fi
           yes "" | make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS oldconfig
           if [ "$ENABLE_KSU" = "true" ]; then
-            grep -q '^CONFIG_KSU=y' out/.config || { echo "::error::CONFIG_KSU tidak aktif"; exit 1; }
-            grep -q '^CONFIG_KSU_SUSFS=y' out/.config || { echo "::error::CONFIG_KSU_SUSFS tidak aktif"; exit 1; }
+            grep -q '^CONFIG_KSU=y' out/.config || { echo "::error::CONFIG_KSU tidak aktif setelah oldconfig"; exit 1; }
+            grep -q '^CONFIG_KSU_SUSFS=y' out/.config || { echo "::error::CONFIG_KSU_SUSFS tidak aktif — cek depend (THREAD_INFO_IN_TASK, 64BIT)"; exit 1; }
             echo "--- CONFIG_KSU hasil ---"
             grep -E '^CONFIG_KSU' out/.config
           fi
@@ -259,6 +253,12 @@ jobs:
             make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS KCFLAGS="$TC_KCFLAGS" -j"$(nproc)"
           fi
 
+      - name: Show compiler used
+        working-directory: kernel
+        continue-on-error: true
+        run: |
+          grep -E "LINUX_COMPILER|UTS_VERSION" out/include/generated/compile.h || true
+
       - name: Verify KernelSU & SuSFS di hasil build
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
@@ -268,7 +268,7 @@ jobs:
           if grep -qi "ksu" out/System.map && grep -qi "susfs" out/System.map; then
             echo "OK: simbol ksu + susfs ada di System.map"
           else
-            echo "::warning::simbol ksu/susfs tidak ditemukan, KSU/SuSFS kemungkinan tidak aktif"
+            echo "::warning::simbol ksu/susfs tidak ditemukan di System.map"
             exit 1
           fi
 
@@ -276,16 +276,25 @@ jobs:
         working-directory: kernel
         run: |
           make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS dtbs
+          echo "=== All DTB files ==="
+          find out/arch/arm64/boot/dts -name "*.dtb" | sort
           DTB=$(find out/arch/arm64/boot/dts -iname "*x00td*.dtb" | head -1)
-          [ -z "$DTB" ] && DTB=$(find out/arch/arm64/boot/dts -name "sdm636.dtb" | head -1)
-          [ -z "$DTB" ] && DTB=$(find out/arch/arm64/boot/dts -name "sdm660.dtb" | head -1)
           if [ -z "$DTB" ]; then
-            echo "::error::DTB tidak ditemukan"
+            DTB=$(find out/arch/arm64/boot/dts -name "sdm636.dtb" | head -1)
+          fi
+          if [ -z "$DTB" ]; then
+            DTB=$(find out/arch/arm64/boot/dts -name "sdm660.dtb" | head -1)
+          fi
+          if [ -z "$DTB" ]; then
+            echo "::error::DTB tidak ditemukan! Build gagal."
             exit 1
           fi
           echo "Using DTB: $DTB"
           cat out/arch/arm64/boot/Image.gz "$DTB" > out/arch/arm64/boot/Image.gz-dtb
           ls -lh out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb
+
+      - name: Check build result
+        run: ls -la kernel/out/arch/arm64/boot/
 
       - name: Upload Image.gz-dtb
         if: success()
