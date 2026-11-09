@@ -6,19 +6,19 @@ on:
       source_repo:
         description: 'URL repo sumber'
         required: true
-        default: 'https://github.com/SonicBSV/android_kernel_asus_sdm660-4.19'
+        default: 'arazy79/kernel_4.19'
       source_branch:
         description: 'Branch di repo sumber'
         required: true
-        default: 'lineage-23.2'
+        default: 'rsuntuk_ori'
       target_branch:
         description: 'Branch basis di repo ini'
         required: true
-        default: 'lineage-23.2'
+        default: 'a16-sonic'
       new_branch:
         description: 'Nama branch hasil'
         required: true
-        default: 'camera-tes'
+        default: 'a16-sonic-reboot'
 
 permissions:
   contents: write
