@@ -1,4 +1,4 @@
-name: Kernel Buid 4.19 (BakaSU + SuSFS) KYURA
+name: Kernel Build 4.19 (BakaSU + SuSFS) KYURA
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         default: 'arazy79/kernel_4.19'
       branch:
         required: true
-        default: 'a16-sonic'
+        default: 'kyura419topaz'
       defconfig:
         required: true
         default: 'X00TD_defconfig'
@@ -196,7 +196,6 @@ jobs:
               c = f.read()
           if 'susfs_alloc_non_unshare_ksu_vfsmnt' not in c:
               injected_ns = False
-              # Regex mencari "mnt = alloc_vfsmnt(...)" di dalam fungsi vfs_kern_mount
               match = re.search(r'(vfs_kern_mount[\s\S]*?)(\s*)(mnt = alloc_vfsmnt\((.*?)\);)', c)
               if match:
                   indent = match.group(2)
@@ -257,18 +256,15 @@ jobs:
                       '\tstruct mm_struct *mm = file->private_data;\n\tstruct pagemapread pm;\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n\tstruct vm_area_struct *vma;\n#endif\n',
                       1
                   )
-              # Anchor 1
               old1 = '\t\tret = mmap_read_lock_killable(mm);\n\t\tif (ret)\n\t\t\tgoto out_free;\n\t\tret = walk_page_range(mm, start_vaddr, end, &pagemap_ops, &pm);'
               new1 = '\t\tret = mmap_read_lock_killable(mm);\n\t\tif (ret)\n\t\t\tgoto out_free;\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n\t\tvma = find_vma(mm, start_vaddr);\n\t\tif (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n\t\t\tgoto bypass_orig_flow;\n#endif\n\t\tret = walk_page_range(mm, start_vaddr, end, &pagemap_ops, &pm);\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\nbypass_orig_flow:\n#endif'
               if old1 in c:
                   c = c.replace(old1, new1, 1); injected = True; print("OK: task_mmu.c patched (Anchor 1)")
-              # Anchor 2
               if not injected:
                   old2 = '\t\tret = mmap_read_lock_killable(mm);\n\t\tif (ret)\n\t\t\tgoto out_free;\n\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);'
                   new2 = '\t\tret = mmap_read_lock_killable(mm);\n\t\tif (ret)\n\t\t\tgoto out_free;\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n\t\tvma = find_vma(mm, start_vaddr);\n\t\tif (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n\t\t\tgoto bypass_orig_flow;\n#endif\n\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\nbypass_orig_flow:\n#endif'
                   if old2 in c:
                       c = c.replace(old2, new2, 1); injected = True; print("OK: task_mmu.c patched (Anchor 2)")
-              # Anchor 3
               if not injected:
                   old3 = '\t\tret = down_read_killable(&mm->mmap_sem);\n\t\tif (ret)\n\t\t\tgoto out_free;\n\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk, &pm);'
                   new3 = '\t\tret = down_read_killable(&mm->mmap_sem);\n\t\tif (ret)\n\t\t\tgoto out_free;\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n\t\tvma = find_vma(mm, start_vaddr);\n\t\tif (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n\t\t\tgoto bypass_orig_flow;\n#endif\n\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk, &pm);\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\nbypass_orig_flow:\n#endif'
@@ -387,6 +383,18 @@ jobs:
                   f.writelines(lines)
               print("OK: write_op exported with EXPORT_SYMBOL")
           PYEOF
+
+      - name: Fix fingerprint C standard warnings
+        working-directory: kernel
+        run: |
+          set -e
+          # Ini fix buat error -Wstrict-prototypes di driver fingerprint
+          FILE="drivers/input/fingerprint/common_X00TD/fingerprint_common.c"
+          if [ -f "$FILE" ]; then
+            sed -i 's/int commonfp_power_on()/int commonfp_power_on(void)/g' "$FILE"
+            sed -i 's/int commonfp_power_off()/int commonfp_power_off(void)/g' "$FILE"
+            echo "OK: Fixed fingerprint_common.c"
+          fi
 
       - name: Select toolchain
         id: tc
