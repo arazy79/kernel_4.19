@@ -496,7 +496,7 @@ jobs:
         env:
           ENABLE_KSU: ${{ github.event.inputs.enable_ksu }}
         run: |
-          cp "arch/arm64/configs/vendor/asus/${{ github.event.inputs.defconfig }}" out/.config
+          cp "arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}" out/.config
           echo "# CONFIG_KALLSYMS_ALL is not set" >> out/.config
           if [ "$ENABLE_KSU" = "true" ]; then
             {
