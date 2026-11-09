@@ -1083,6 +1083,9 @@ int dma_async_device_register(struct dma_device *device)
 	dma_channel_rebalance();
 	mutex_unlock(&dma_list_mutex);
 
+	if (!chancnt)
+		kfree(idr_ref);
+
 	return 0;
 
 err_out:
@@ -1380,5 +1383,4 @@ static int __init dma_bus_init(void)
 	return class_register(&dma_devclass);
 }
 arch_initcall(dma_bus_init);
-
 
