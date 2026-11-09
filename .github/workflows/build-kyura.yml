@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.19 (BakaSU + SuSFS)
+name: Kernel Buid 4.19 (BakaSU + SuSFS) KYURA
 
 on:
   workflow_dispatch:
