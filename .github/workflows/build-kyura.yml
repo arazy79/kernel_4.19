@@ -1,4 +1,4 @@
-name: Kernel Build 4.19 (BakaSU + SuSFS) KYURA
+name: Kernel Build X00TD 4.19 (BakaSU + SuSFS)
 
 on:
   workflow_dispatch:
@@ -145,14 +145,14 @@ jobs:
           python3 <<'PYEOF'
           import sys
           import os
+          import re
 
           # FIX 0.5: fs/notify/fdinfo.c (Manual Patch)
           with open('fs/notify/fdinfo.c', 'r') as f:
               c = f.read()
           if 'susfs_is_inode_sus_kstat' not in c:
-              old_fd = 'u32 mask = mark->mask & IN_ALL_EVENTS;\n\t\tseq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:%x ",'
-              new_fd = '''u32 mask = mark->mask & IN_ALL_EVENTS;
-          #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+              old_fd = 'u32 mask = mark->mask & IN_ALL_EVENTS;'
+              new_fd = '''#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
           		if (susfs_is_current_app_uid()) {
           			bool is_fuse = false;
           			if (susfs_is_inode_sus_kstat(inode, &is_fuse)) {
@@ -160,8 +160,8 @@ jobs:
           				dev_t dev = inode->i_sb->s_dev;
           				susfs_sus_kstat_spoof_inotify_fdinfo(&ino, &dev);
           				seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
-          					   inode_mark->wd, ino, dev,
-          					   mask);
+          						inode_mark->wd, ino, dev,
+          						mark->mask & IN_ALL_EVENTS);
           				show_mark_fhandle(m, inode);
           				seq_putc(m, '\\n');
           				iput(inode);
@@ -169,7 +169,7 @@ jobs:
           			}
           		}
           #endif
-          		seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:%x ",'''
+          		u32 mask = mark->mask & IN_ALL_EVENTS;'''
               if old_fd in c:
                   c = c.replace(old_fd, new_fd, 1)
                   if '#include <linux/susfs_def.h>' not in c:
@@ -179,7 +179,7 @@ jobs:
                   open('fs/notify/fdinfo.c', 'w').write(c)
                   print("OK: fdinfo.c manually patched")
               else:
-                  print("SKIP: fdinfo.c anchor not found, maybe already patched or different")
+                  print("SKIP: fdinfo.c anchor not found")
 
           # FIX 0: PASTIKAN INCLUDE SUSFS_DEF.H MASUK KE task_mmu.c
           with open('fs/proc/task_mmu.c', 'r') as f:
@@ -191,54 +191,40 @@ jobs:
               open('fs/proc/task_mmu.c', 'w').write(c)
               print("OK: task_mmu.c include added")
 
-          # FIX 1: fs/namespace.c (vfs_create_mount)
+          # FIX 1: fs/namespace.c (vfs_kern_mount) - MENGGUNAKAN REGEX
           with open('fs/namespace.c', 'r') as f:
               c = f.read()
-          if 'susfs_alloc_non_unshare_ksu_vfsmnt(fc->source' not in c:
+          if 'susfs_alloc_non_unshare_ksu_vfsmnt' not in c:
               injected_ns = False
-              # Anchor A
-              if '\tmnt = alloc_vfsmnt(fc->source ?: "none");' in c:
-                  old = '\tmnt = alloc_vfsmnt(fc->source ?: "none");'
-                  new = '''#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-          	if (static_branch_unlikely(&susfs_is_sdcard_android_data_not_decrypted)) {
-          		if (susfs_is_current_ksu_domain()) {
-          			mnt = susfs_alloc_non_unshare_ksu_vfsmnt(fc->source ?: "none");
-          			goto bypass_orig_flow;
-          		}
-          	}
+              # Regex mencari "mnt = alloc_vfsmnt(...)" di dalam fungsi vfs_kern_mount
+              match = re.search(r'(vfs_kern_mount[\s\S]*?)(\s*)(mnt = alloc_vfsmnt\((.*?)\);)', c)
+              if match:
+                  indent = match.group(2)
+                  alloc_call = match.group(3)
+                  var_name = match.group(4)
+                  new = f'''#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          {indent}if (static_branch_unlikely(&susfs_is_sdcard_android_data_not_decrypted)) {{
+          {indent}	if (susfs_is_current_ksu_domain()) {{
+          {indent}		mnt = susfs_alloc_non_unshare_ksu_vfsmnt({var_name} ?: "none");
+          {indent}		goto bypass_orig_flow;
+          {indent}	}}
+          {indent}}}
           #endif
-          	mnt = alloc_vfsmnt(fc->source ?: "none");
+          {indent}{alloc_call}
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           bypass_orig_flow:
           #endif'''
-                  c = c.replace(old, new, 1)
+                  c = c.replace(alloc_call, new, 1)
                   injected_ns = True
-                  print("OK: namespace.c patched (Anchor A)")
-              # Anchor B (Fallback)
-              elif '\tmnt = alloc_vfsmnt(name);' in c:
-                  old = '\tmnt = alloc_vfsmnt(name);'
-                  new = '''#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-          	if (static_branch_unlikely(&susfs_is_sdcard_android_data_not_decrypted)) {
-          		if (susfs_is_current_ksu_domain()) {
-          			mnt = susfs_alloc_non_unshare_ksu_vfsmnt(name ?: "none");
-          			goto bypass_orig_flow;
-          		}
-          	}
-          #endif
-          	mnt = alloc_vfsmnt(name);
-          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-          bypass_orig_flow:
-          #endif'''
-                  c = c.replace(old, new, 1)
-                  injected_ns = True
-                  print("OK: namespace.c patched (Anchor B)")
+                  print(f"OK: namespace.c patched (Regex: {alloc_call})")
               else:
-                  print("WARNING: namespace.c anchor missing completely, skipping")
+                  print("ERROR: namespace.c anchor missing", file=sys.stderr)
+                  sys.exit(1)
 
               if injected_ns:
                   open('fs/namespace.c', 'w').write(c)
           else:
-              print("SKIP: namespace.c")
+              print("SKIP: namespace.c already patched")
 
           # FIX 2: fs/proc/cmdline.c
           with open('fs/proc/cmdline.c', 'r') as f:
@@ -496,7 +482,7 @@ jobs:
         env:
           ENABLE_KSU: ${{ github.event.inputs.enable_ksu }}
         run: |
-          cp "arch/arm64/configs/vendor/${{ github.event.inputs.defconfig }}" out/.config
+          cp "arch/arm64/configs/vendor/asus/${{ github.event.inputs.defconfig }}" out/.config
           echo "# CONFIG_KALLSYMS_ALL is not set" >> out/.config
           if [ "$ENABLE_KSU" = "true" ]; then
             {
