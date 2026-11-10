@@ -1,4 +1,4 @@
-name: Kernel Build 4.19 (BakaSU + SuSFS + Hotspot Fix)
+name: Kernel Build 4.19 (BakaSU + SuSFS + Hotspot Fix) SKYWALKER UPSTREAM 325
 
 on:
   workflow_dispatch:
