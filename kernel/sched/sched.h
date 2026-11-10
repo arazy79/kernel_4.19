@@ -260,6 +260,14 @@ static inline bool dl_entity_is_special(struct sched_dl_entity *dl_se)
 #endif
 }
 
+{
+#if defined(CONFIG_CPU_FREQ_GOV_SCHEDUTIL) || defined(CONFIG_CPU_FREQ_GOV_SCHEDHORIZON)
+	return unlikely(dl_se->flags & SCHED_FLAG_SUGOV);
+#else
+	return false;
+#endif
+}
+
 /*
  * Tells if entity @a should preempt entity @b.
  */
