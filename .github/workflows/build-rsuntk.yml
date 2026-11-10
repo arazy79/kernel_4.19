@@ -1,4 +1,4 @@
-name: Kernel Build  4.19 RSUNTK (BakaSU + SuSFS)
+name: Kernel Build 4.19 (BakaSU + SuSFS) RSUNTK
 
 on:
   workflow_dispatch:
