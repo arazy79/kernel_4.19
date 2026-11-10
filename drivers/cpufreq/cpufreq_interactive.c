@@ -645,6 +645,7 @@ static int cpufreq_interactive_notifier(struct notifier_block *nb,
 					unsigned long val, void *data)
 {
 	struct cpufreq_freqs *freq = data;
+	unsigned int cpu = cpumask_first(freq->policy->cpus);
 	struct interactive_cpu *icpu = &per_cpu(interactive_cpu, cpu);
 	unsigned long flags;
 
