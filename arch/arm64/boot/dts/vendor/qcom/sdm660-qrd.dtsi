@@ -263,7 +263,7 @@
 };
 
 &pm660_haptics {
-	qcom,vmax-mv = <1800>;
+	qcom,vmax-mv = <1700>;
 };
 
 &i2c_2 {
