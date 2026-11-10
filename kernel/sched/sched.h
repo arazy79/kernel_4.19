@@ -253,14 +253,6 @@ static inline void update_avg(u64 *avg, u64 sample)
 
 static inline bool dl_entity_is_special(struct sched_dl_entity *dl_se)
 {
-#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL
-	return unlikely(dl_se->flags & SCHED_FLAG_SUGOV);
-#else
-	return false;
-#endif
-}
-
-{
 #if defined(CONFIG_CPU_FREQ_GOV_SCHEDUTIL) || defined(CONFIG_CPU_FREQ_GOV_SCHEDHORIZON)
 	return unlikely(dl_se->flags & SCHED_FLAG_SUGOV);
 #else
@@ -2670,7 +2662,7 @@ static inline void cpufreq_update_util(struct rq *rq, unsigned int flags)
 	data = rcu_dereference_sched(*per_cpu_ptr(&cpufreq_update_util_data,
 					cpu_of(rq)));
 	if (data)
-		data->func(data, rq_clock(rq), flags);
+		data->func(data, clock, flags);
 }
 #else
 static inline void cpufreq_update_util(struct rq *rq, unsigned int flags) {}
@@ -2846,7 +2838,7 @@ static inline unsigned long cpu_util_cfs(struct rq *rq)
 }
 #endif
 
-#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL
+#if defined(CONFIG_CPU_FREQ_GOV_SCHEDUTIL) || defined(CONFIG_CPU_FREQ_GOV_SCHEDHORIZON)
 
 unsigned long effective_cpu_util(int cpu, unsigned long util_cfs,
 				 unsigned long *min,
@@ -2871,10 +2863,10 @@ static inline unsigned long cpu_util_rt(struct rq *rq)
 	return READ_ONCE(rq->avg_rt.util_avg);
 }
 
-#else /* CONFIG_CPU_FREQ_GOV_SCHEDUTIL */
-unsigned long effective_cpu_util(int cpu, unsigned long util_cfs,
-                                 unsigned long *min,
-                                 unsigned long *max)
+#else /* CONFIG_CPU_FREQ_GOV_SCHEDUTIL || CONFIG_CPU_FREQ_GOV_SCHEDHORIZON */
+static inline unsigned long effective_cpu_util(int cpu, unsigned long util_cfs,
+					       unsigned long *min,
+					       unsigned long *max)
 {
 	return 0;
 }
@@ -2883,7 +2875,7 @@ static inline unsigned long cpu_util_rt(struct rq *rq)
 {
 	return 0;
 }
-#endif /* CONFIG_CPU_FREQ_GOV_SCHEDUTIL */
+#endif /* CONFIG_CPU_FREQ_GOV_SCHEDUTIL || CONFIG_CPU_FREQ_GOV_SCHEDHORIZON */
 
 #ifdef CONFIG_SMP
 static inline unsigned long cpu_util(int cpu)
