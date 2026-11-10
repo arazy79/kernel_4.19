@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.19 (BakaSU + SuSFS) SKYWALKET UPDATREAM 325
+name: Kernel Build 4.19 (BakaSU + SuSFS) SKYWALKET UPSTREAM 325
 on:
   workflow_dispatch:
     inputs:
