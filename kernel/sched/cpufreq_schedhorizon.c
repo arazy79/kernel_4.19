@@ -144,7 +144,7 @@ static inline bool use_pelt(void)
 #endif
 }
 
-static inline int match_nearest_efficient_step(int freq, int maxstep, int *freq_table)
+static inline int match_nearest_efficient_step(int freq, int maxstep, unsigned int *freq_table)
 {
 	int i;
 
@@ -620,7 +620,6 @@ static u64 *resolve_data_delay (const char *buf, int *num_ret,size_t count)
 	const char *cp;
 	u64 *output;
 	int num = 1, i;
-	pr_err("Started");
 
 	cp = buf;
 	while ((cp = strpbrk(cp + 1, " ")))
@@ -630,11 +629,9 @@ static u64 *resolve_data_delay (const char *buf, int *num_ret,size_t count)
 	
 	cp = buf;
 	i = 0;
-	pr_err("Before while");
 	while (i < num && cp-buf < count) {
 		if (sscanf(cp, "%llu", &output[i]) == 1) {
 			output[i] = output[i] * NSEC_PER_MSEC;
-			pr_info("Got: %llu", output[i]);
 			i++;
 		} else {
 			goto err_kfree;
@@ -738,7 +735,7 @@ static ssize_t efficient_freq_show(struct gov_attr_set *attr_set, char *buf)
 	ssize_t ret = 0;
 
 	for (i = 0; i < tunables->nefficient_freq; i++)
-		ret += sprintf(buf + ret, "%llu%s", tunables->efficient_freq[i], " ");
+		ret += sprintf(buf + ret, "%u%s", tunables->efficient_freq[i], " ");
 
 	sprintf(buf + ret - 1, "\n");
 
@@ -752,7 +749,8 @@ static ssize_t up_delay_show(struct gov_attr_set *attr_set, char *buf)
 	ssize_t ret = 0;
 
 	for (i = 0; i < tunables->nup_delay; i++)
-		ret += sprintf(buf + ret, "%u%s", tunables->up_delay[i] / NSEC_PER_MSEC, " ");
+		ret += sprintf(buf + ret, "%lu%s",
+	       (unsigned long)(tunables->up_delay[i] / NSEC_PER_MSEC), " ");
 
 	sprintf(buf + ret - 1, "\n");
 
