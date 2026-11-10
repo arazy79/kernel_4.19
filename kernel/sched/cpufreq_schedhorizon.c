@@ -17,6 +17,11 @@
 #include <trace/events/power.h>
 #include <linux/sched/sysctl.h>
 
+enum schedutil_type {
+	FREQUENCY_UTIL,
+	ENERGY_UTIL,
+};
+
 static unsigned int default_efficient_freq_lp[] = {0};
 static u64 default_up_delay_lp[] = {0};
 
@@ -69,7 +74,9 @@ struct sugov_cpu {
 
 	u64			last_update;
 
+#ifdef CONFIG_SCHED_WALT
 	struct sched_walt_cpu_load walt_load;
+#endif
 
 	unsigned long util;
 	unsigned int flags;
@@ -998,17 +1005,35 @@ static int sugov_init(struct cpufreq_policy *policy)
 	tunables->up_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
 	tunables->down_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
 	
+#ifdef CONFIG_SCHED_WALT
 	if (cpumask_test_cpu(sg_policy->policy->cpu, cpu_lp_mask)) {
 		tunables->efficient_freq = default_efficient_freq_lp;
-    		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_lp);
+		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_lp);
 		tunables->up_delay = default_up_delay_lp;
 		tunables->nup_delay = ARRAY_SIZE(default_up_delay_lp);
 	} else if (cpumask_test_cpu(sg_policy->policy->cpu, cpu_perf_mask)) {
 		tunables->efficient_freq = default_efficient_freq_hp;
-    		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_hp);
+		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_hp);
 		tunables->up_delay = default_up_delay_hp;
 		tunables->nup_delay = ARRAY_SIZE(default_up_delay_hp);
 	}
+#else
+	/* Tanpa WALT: pakai max_freq buat bedain cluster LP vs HP.
+	 * SDM660: LP max ~1.84 GHz, HP max ~2.21 GHz.
+	 * Threshold pakai default_efficient_freq_hp[0] = 1958400 kHz.
+	 */
+	if (sg_policy->policy->cpuinfo.max_freq <= default_efficient_freq_hp[0]) {
+		tunables->efficient_freq = default_efficient_freq_lp;
+		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_lp);
+		tunables->up_delay = default_up_delay_lp;
+		tunables->nup_delay = ARRAY_SIZE(default_up_delay_lp);
+	} else {
+		tunables->efficient_freq = default_efficient_freq_hp;
+		tunables->nefficient_freq = ARRAY_SIZE(default_efficient_freq_hp);
+		tunables->up_delay = default_up_delay_hp;
+		tunables->nup_delay = ARRAY_SIZE(default_up_delay_hp);
+	}
+#endif
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
