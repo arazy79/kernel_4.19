@@ -1,5 +1,4 @@
 name: Kernel Build 4.19 (BakaSU + SuSFS) KYURA
-
 on:
   workflow_dispatch:
     inputs:
