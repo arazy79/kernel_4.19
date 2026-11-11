@@ -444,7 +444,7 @@
 /* Huaqin modify for ZQL1650 by fangaijun  at 2018/02/2 end */
 /* Huaqin modify for ZQL1650 recharge SOC and voltage by fangaijun at 2018/02/2 start */
 			qcom,fg-recharge-voltage = <4150>;
-			qcom,fg-recharge-soc-thr = <98>;
+			qcom,fg-recharge-soc-thr = <80>;
 			qcom,fg-auto-recharge-soc;
 /* Huaqin modify for ZQL1650 recharge SOC and voltage by fangaijun at 2018/02/2 end */
 //Huaqin added by tangqingyong at 20180226 for fg use external start
@@ -540,16 +540,16 @@
 			interrupt-names = "hap-sc-irq", "hap-play-irq";
 
 			qcom,actuator-type = "erm"; 
-			qcom,vmax-mv = <3000>;
-			qcom,play-rate-us = <5715>;
+			qcom,vmax-mv = <2100>;
+			qcom,play-rate-us = <1200>;
 			qcom,max-play-time-ms = <15000>;
 
 			/* 0: CLICK */
 			wf_0 {
 				qcom,effect-id = <0>;
-				qcom,wf-vmax-mv = <3000>;
+				qcom,wf-vmax-mv = <1900>;
 				qcom,wf-pattern = /bits/ 8 <0x3e 0x3e 0x3e>;
-				qcom,wf-play-rate-us = <5715>;
+				qcom,wf-play-rate-us = <1200>;
 				qcom,wf-repeat-count = <1>;
 				qcom,wf-s-repeat-count = <1>;
 			};
@@ -557,9 +557,9 @@
 			/* 1: DOUBLE CLICK */
 			wf_1 {
 				qcom,effect-id = <1>;
-				qcom,wf-vmax-mv = <3000>;
-				qcom,wf-pattern = /bits/ 8 <0x7e 0x7e 0x00 0x00 0x7e 0x7e>;
-				qcom,wf-play-rate-us = <5715>;
+				qcom,wf-vmax-mv = <1900>;
+				qcom,wf-pattern = /bits/ 8 <0x7e 0x3e 0x00 0x00 0x7e 0x7e>;
+				qcom,wf-play-rate-us = <1200>;
 				qcom,wf-repeat-count = <1>;
 				qcom,wf-s-repeat-count = <1>;
 			};
@@ -567,9 +567,9 @@
 			/* 2: TICK (Мягкий клик клавиатуры/скролла) */
 			wf_2 {
 				qcom,effect-id = <2>;
-				qcom,wf-vmax-mv = <2200>;
+				qcom,wf-vmax-mv = <2000>;
 				qcom,wf-pattern = /bits/ 8 <0x40 0x00>;
-				qcom,wf-play-rate-us = <4000>;
+				qcom,wf-play-rate-us = <1200>;
 				qcom,wf-repeat-count = <1>;
 				qcom,wf-s-repeat-count = <1>;
 			};
@@ -577,9 +577,9 @@
 			/* 3: THUD */
 			wf_3 {
 				qcom,effect-id = <3>;
-				qcom,wf-vmax-mv = <3000>;
-				qcom,wf-pattern = /bits/ 8 <0x7e 0x7e 0x7e>;
-				qcom,wf-play-rate-us = <5715>;
+				qcom,wf-vmax-mv = <2100>;
+				qcom,wf-pattern = /bits/ 8 <0x3e 0x7e 0x7e>;
+				qcom,wf-play-rate-us = <1200>;
 				qcom,wf-repeat-count = <1>;
 				qcom,wf-s-repeat-count = <1>;
 			};
@@ -587,9 +587,9 @@
 			/* 4: POP */
 			wf_4 {
 				qcom,effect-id = <4>;
-				qcom,wf-vmax-mv = <2600>;
+				qcom,wf-vmax-mv = <2000>;
 				qcom,wf-pattern = /bits/ 8 <0x60 0x00>;
-				qcom,wf-play-rate-us = <5000>;
+				qcom,wf-play-rate-us = <1200>;
 				qcom,wf-repeat-count = <1>;
 				qcom,wf-s-repeat-count = <1>;
 			};
@@ -597,9 +597,9 @@
 			/* 5: HEAVY CLICK (Сильный щелчок) */
 			wf_5 {
 				qcom,effect-id = <5>;
-				qcom,wf-vmax-mv = <3200>;
-				qcom,wf-pattern = /bits/ 8 <0x7e 0x7e 0x7e 0x7e>;
-				qcom,wf-play-rate-us = <5715>;
+				qcom,wf-vmax-mv = <2100>;
+				qcom,wf-pattern = /bits/ 8 <0x7e 0x3e 0x7e 0x7e>;
+				qcom,wf-play-rate-us = <1200>;
 				qcom,wf-repeat-count = <1>;
 				qcom,wf-s-repeat-count = <1>;
 			};
