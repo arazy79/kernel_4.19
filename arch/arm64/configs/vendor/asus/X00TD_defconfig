@@ -1,12 +1,12 @@
 # ═══════════════════════════════════════════════════════════════════
-# Kernel defconfig — ASUS X00TD (ZenFone Max Pro M1 / SDM636)
+# Kernel defconfig — ASUS X00TD (ZenFone Max Pro M1 / SDM660)
 # Target: crDroid Android 15/16, kernel 4.19 CAF
 # FBE v1 + FUSE + Scoped Storage
 # WLAN: qcacld-3.0 built-in, 2.4 GHz only (fixed via wma_main.c patch)
 # ═══════════════════════════════════════════════════════════════════
 
 # ───── General setup ─────
-CONFIG_LOCALVERSION="-Ratibor_LTS_ReBased"
+CONFIG_LOCALVERSION="-androidperf"
 # CONFIG_LOCALVERSION_AUTO is not set
 CONFIG_AUDIT=y
 # CONFIG_AUDITSYSCALL is not set
@@ -36,7 +36,7 @@ CONFIG_RD_XZ=y
 # CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
 CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
 # CONFIG_FHANDLE is not set
-CONFIG_KALLSYMS_ALL=y
+# CONFIG_KALLSYMS_ALL is not set
 CONFIG_USERFAULTFD=y
 # CONFIG_RSEQ is not set
 CONFIG_EMBEDDED=y
