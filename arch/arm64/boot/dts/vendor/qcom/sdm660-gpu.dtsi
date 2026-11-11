@@ -30,7 +30,7 @@
 
 	gpubw: qcom,gpubw {
 		compatible = "qcom,devbw";
-		governor = "bw_vbif";
+		governor = "performance";
 		qcom,src-dst-ports = <26 512>;
 		operating-points-v2 = <&gpu_bw_tbl>;
 		/*
@@ -54,7 +54,7 @@
 
 		qcom,chipid = <0x05010200>;
 
-		qcom,initial-pwrlevel = <6>;
+		qcom,initial-pwrlevel = <4>;
 
 		/* <HZ/12> */
 		qcom,idle-timeout = <80>;
@@ -132,7 +132,7 @@
 
 			qcom,gpu-cx-ipeak@0 {
 				qcom,gpu-cx-ipeak = <&cx_ipeak_lm 1>;
-				qcom,gpu-cx-ipeak-freq = <700000000>;
+				qcom,gpu-cx-ipeak-freq = <750000000>;
 			};
 		};
 
@@ -142,7 +142,7 @@
 			#size-cells = <0>;
 			compatible = "qcom,gpu-mempools";
 
-			qcom,mempool-max-pages = <32768>;
+			qcom,mempool-max-pages = <36768>;
 
 			/* 4K Page Pool configuration */
 			qcom,gpu-mempool@0 {
@@ -551,7 +551,7 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 
-				qcom,speed-bin = <90>;
+				qcom,speed-bin = <122>;
 
 				qcom,initial-pwrlevel = <2>;
 
@@ -605,7 +605,7 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 
-				qcom,speed-bin = <122>;
+				qcom,speed-bin = <90>;
 
 				qcom,initial-pwrlevel = <3>;
 
