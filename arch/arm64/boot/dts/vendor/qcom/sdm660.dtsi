@@ -405,7 +405,7 @@
 			alloc-ranges = <0x0 0x00000000 0x0 0xffffffff>;
 			reusable;
 			alignment = <0x0 0x400000>;
-			size = <0x0 0x5c00000>;
+			size = <0x0 0xa000000>;
 		};
 
 		/* global autoconfigured region for contiguous allocations */
@@ -414,7 +414,7 @@
 			alloc-ranges = <0 0x00000000 0 0xffffffff>;
 			reusable;
 			alignment = <0 0x400000>;
-			size = <0 0x2c00000>;
+			size = <0 0x0a00000>;
 			linux,cma-default;
 		};
 
@@ -1151,7 +1151,7 @@
 
 	cpu0_cpu_ddr_latfloor: qcom,cpu0-cpu-ddr-latfloor {
 		compatible = "qcom,devbw";
-		governor = "powersave";
+		governor = "memlat";
 		qcom,src-dst-ports =
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_EBI_CH0>;
 		qcom,active-only;
@@ -1160,7 +1160,7 @@
 
 	cpu4_cpu_ddr_latfloor: qcom,cpu4-cpu-ddr-latfloor {
 		compatible = "qcom,devbw";
-		governor = "powersave";
+		governor = "memlat";
 		qcom,src-dst-ports =
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_EBI_CH0>;
 		qcom,active-only;
@@ -1169,7 +1169,7 @@
 
 	cpu0_cpu_ddr_lat: qcom,cpu0-cpu-ddr-lat {
 		compatible = "qcom,devbw";
-		governor = "powersave";
+		governor = "memlat";
 		qcom,src-dst-ports =
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_EBI_CH0>;
 		qcom,active-only;
@@ -1178,7 +1178,7 @@
 
 	cpu4_cpu_ddr_lat: qcom,cpu4-cpu-ddr-lat {
 		compatible = "qcom,devbw";
-		governor = "powersave";
+		governor = "memlat";
 		qcom,src-dst-ports =
 			<MSM_BUS_MASTER_AMPSS_M0 MSM_BUS_SLAVE_EBI_CH0>;
 		qcom,active-only;
@@ -1381,20 +1381,19 @@
 			<  902400 >,
 			< 1113600 >,
 			< 1401600 >,
-			< 1536000 >,
 			< 1612800 >,
-			< 1747200 >,
-			< 1843200 >;
+			< 1843200 >,
+			< 2016000 >;
 
 		qcom,cpufreq-table-4 =
+			<  633600 >,
+			<  902400 >,
 			< 1113600 >,
 			< 1401600 >,
-			< 1747200 >,
+			< 1612800 >,
 			< 1804800 >,
-			< 1958400 >,
-			< 2150400 >,
 			< 2208000 >,
-			< 2457600 >;
+			< 2304000 >;
 	};
 
 	sdhc_1: sdhci@c0c4000 {
