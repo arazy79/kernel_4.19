@@ -597,23 +597,31 @@ static int fg_get_jeita_threshold(struct fg_dev *fg,
 	return 0;
 }
 
+static int fg_temp_offset = 0;
+module_param(fg_temp_offset, int, 0644);
+MODULE_PARM_DESC(fg_temp_offset, "Battery temp calibration offset in deciDegC (0=off, -50=-5C)");
+
 static int fg_get_battery_temp(struct fg_dev *fg, int *val)
 {
-	int rc = 0, temp;
-	u8 buf[2];
+    int rc = 0, temp;
+    u8 buf[2];
 
-	rc = fg_read(fg, BATT_INFO_BATT_TEMP_LSB(fg), buf, 2);
-	if (rc < 0) {
-		pr_err("failed to read addr=0x%04x, rc=%d\n",
-			BATT_INFO_BATT_TEMP_LSB(fg), rc);
-		return rc;
-	}
+    rc = fg_read(fg, BATT_INFO_BATT_TEMP_LSB(fg), buf, 2);
+    if (rc < 0) {
+        pr_err("failed to read addr=0x%04x, rc=%d\n",
+            BATT_INFO_BATT_TEMP_LSB(fg), rc);
+        return rc;
+    }
 
-	temp = ((buf[1] & BATT_TEMP_MSB_MASK) << 8) |
-		(buf[0] & BATT_TEMP_LSB_MASK);
-	/* Value is in 0.25Kelvin; Convert it to deciDegC */
-	*val = DIV_ROUND_CLOSEST((temp - 273*4) * 10, 4);
-	return 0;
+    temp = ((buf[1] & BATT_TEMP_MSB_MASK) << 8) |
+        (buf[0] & BATT_TEMP_LSB_MASK);
+    /* Value is in 0.25Kelvin; Convert it to deciDegC */
+    *val = DIV_ROUND_CLOSEST((temp - 273*4) * 10, 4);
+    
+    /* Runtime calibration offset (default 0 = no change) */
+    *val += fg_temp_offset;
+    
+    return 0;
 }
 
 static bool is_batt_empty(struct fg_dev *fg)
