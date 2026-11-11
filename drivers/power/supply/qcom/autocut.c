@@ -4,12 +4,17 @@
  * - INPUT_SUSPEND for real power cut
  * - USB plug-in detection: always resume on connect
  * - Hysteresis: stop at max, resume at min, do nothing in between
+ * - Runtime enable/disable via module param
  */
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/workqueue.h>
 #include <linux/power_supply.h>
+
+static bool enabled = true;
+module_param(enabled, bool, 0644);
+MODULE_PARM_DESC(enabled, "Enable autocut (0=off, 1=on)");
 
 static int max_soc = 100;
 static int min_soc = 90;
@@ -20,6 +25,22 @@ MODULE_PARM_DESC(min_soc, "Min SOC to resume charging (default 90)");
 
 static struct delayed_work autocut_work;
 static int last_usb_present = -1;
+static bool warned_suspend_fail;
+
+static int autocut_set_suspend(struct power_supply *batt_psy, int suspend)
+{
+	union power_supply_propval val = { .intval = suspend };
+	int ret;
+
+	ret = power_supply_set_property(batt_psy,
+			POWER_SUPPLY_PROP_INPUT_SUSPEND, &val);
+	if (ret && !warned_suspend_fail) {
+		pr_warn("autocut: battery psy rejected INPUT_SUSPEND (err=%d) - "
+			"autocut won't work on this kernel\n", ret);
+		warned_suspend_fail = true;
+	}
+	return ret;
+}
 
 static void autocut_work_fn(struct work_struct *work)
 {
@@ -27,10 +48,22 @@ static void autocut_work_fn(struct work_struct *work)
 	union power_supply_propval val;
 	int ret, capacity, usb_present = 0;
 
+	if (!enabled) {
+		/* Release any suspend while disabled */
+		batt_psy = power_supply_get_by_name("battery");
+		if (batt_psy) {
+			autocut_set_suspend(batt_psy, 0);
+			power_supply_put(batt_psy);
+		}
+		last_usb_present = -1;	/* re-evaluate on re-enable */
+		goto reschedule;
+	}
+
 	/* Check USB present */
 	usb_psy = power_supply_get_by_name("usb");
 	if (usb_psy) {
-		ret = power_supply_get_property(usb_psy, POWER_SUPPLY_PROP_PRESENT, &val);
+		ret = power_supply_get_property(usb_psy,
+				POWER_SUPPLY_PROP_PRESENT, &val);
 		if (!ret)
 			usb_present = val.intval;
 		power_supply_put(usb_psy);
@@ -42,7 +75,8 @@ static void autocut_work_fn(struct work_struct *work)
 	if (!batt_psy)
 		goto reschedule;
 
-	ret = power_supply_get_property(batt_psy, POWER_SUPPLY_PROP_CAPACITY, &val);
+	ret = power_supply_get_property(batt_psy,
+			POWER_SUPPLY_PROP_CAPACITY, &val);
 	if (ret) {
 		power_supply_put(batt_psy);
 		goto reschedule;
@@ -51,22 +85,22 @@ static void autocut_work_fn(struct work_struct *work)
 
 	/* Charger just plugged in: always allow charging first */
 	if (usb_present == 1 && last_usb_present != 1) {
-		val.intval = 0;
-		power_supply_set_property(batt_psy, POWER_SUPPLY_PROP_INPUT_SUSPEND, &val);
-		pr_info("autocut: charger plugged, force resume (soc=%d)\n", capacity);
+		autocut_set_suspend(batt_psy, 0);
+		pr_info("autocut: charger plugged, force resume (soc=%d)\n",
+			capacity);
 	}
 	/* Charger connected: apply SOC thresholds only */
 	else if (usb_present == 1) {
 		if (capacity >= max_soc) {
-			val.intval = 1;
-			power_supply_set_property(batt_psy, POWER_SUPPLY_PROP_INPUT_SUSPEND, &val);
-			pr_info("autocut: charging STOPPED at %d%% (max=%d)\n", capacity, max_soc);
+			autocut_set_suspend(batt_psy, 1);
+			pr_info("autocut: charging STOPPED at %d%% (max=%d)\n",
+				capacity, max_soc);
 		} else if (capacity <= min_soc) {
-			val.intval = 0;
-			power_supply_set_property(batt_psy, POWER_SUPPLY_PROP_INPUT_SUSPEND, &val);
-			pr_info("autocut: charging RESUMED at %d%% (min=%d)\n", capacity, min_soc);
+			autocut_set_suspend(batt_psy, 0);
+			pr_info("autocut: charging RESUMED at %d%% (min=%d)\n",
+				capacity, min_soc);
 		}
-		/* else: between min and max, do nothing (keep current state) */
+		/* else: between min and max, keep current state */
 	}
 
 	last_usb_present = usb_present;
@@ -80,7 +114,8 @@ static int __init autocut_init(void)
 {
 	INIT_DELAYED_WORK(&autocut_work, autocut_work_fn);
 	schedule_delayed_work(&autocut_work, msecs_to_jiffies(3000));
-	pr_info("autocut: loaded (max_soc=%d, min_soc=%d)\n", max_soc, min_soc);
+	pr_info("autocut: loaded (enabled=%d, max_soc=%d, min_soc=%d)\n",
+		enabled, max_soc, min_soc);
 	return 0;
 }
 
