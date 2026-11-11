@@ -1112,6 +1112,7 @@ static enum power_supply_property smb2_batt_props[] = {
 	POWER_SUPPLY_PROP_TIME_TO_FULL_NOW,
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE,
+    POWER_SUPPLY_PROP_CHARGING_ENABLED,
 };
 
 static int smb2_batt_get_prop(struct power_supply *psy,
@@ -1146,6 +1147,10 @@ static int smb2_batt_get_prop(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT_MAX:
 		rc = smblib_get_prop_system_temp_level_max(chg, val);
+		break;
+	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
+		val->intval = !is_client_vote_enabled(chg->chg_disable_votable,
+							USER_VOTER);
 		break;
 	case POWER_SUPPLY_PROP_CHARGER_TEMP:
 		/* do not query RRADC if charger is not present */
@@ -1259,6 +1264,23 @@ static int smb2_batt_set_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_STATUS:
 		rc = smblib_set_prop_batt_status(chg, val);
 		break;
+	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
+    vote(chg->chg_disable_votable, USER_VOTER, !val->intval, 0);
+    /*
+     * Sync input_suspend with charging_enabled (inverted):
+     * charging_enabled=0 -> input_suspend=1 (cut USB input)
+     * charging_enabled=1 -> input_suspend=0 (resume USB input)
+     *
+     * Belt-and-suspenders: chg_disable votes CHARGING_ENABLE_CMD_REG
+     * (which ASUS JEITA re-enables every 60s), while input_suspend
+     * votes USBIN_SUSPEND_BIT in USBIN_CMD_IL_REG (untouched by JEITA).
+     */
+    {
+        union power_supply_propval suspend_val = {0};
+        suspend_val.intval = !val->intval;
+        rc = smblib_set_prop_input_suspend(chg, &suspend_val);
+    }
+    break;
 	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
 		rc = smblib_set_prop_input_suspend(chg, val);
 		break;
@@ -1360,6 +1382,7 @@ static int smb2_batt_prop_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_DIE_HEALTH:
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
+	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
 		return 1;
 	default:
 		break;
