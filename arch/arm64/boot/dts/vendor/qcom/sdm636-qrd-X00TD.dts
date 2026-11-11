@@ -29,8 +29,8 @@
 #include "dsi-panel-td4310-1080p-video-txd.dtsi"
 /* Huaqin modify for ZQL1650-1356 by qimaokang at 2018/05/22 end */
 / {
-	model = "Qualcomm Technologies, Inc. SDM 636 PM660 + PM660L QRD";
-	compatible = "qcom,sdm636-qrd", "qcom,sdm636", "qcom,qrd";
+	model = "Qualcomm Technologies, Inc. SDM 660 PM660 + PM660L QRD";
+	compatible = "qcom,sdm660-qrd", "qcom,sdm660", "qcom,qrd";
 /* Huaqin modify for ZQL1650-136 by xuefeng at 2018/01/20 start */
 	qcom,board-id = <0x1000b 0>;
 /* Huaqin modify for ZQL1650-136 by xuefeng at 2018/01/20 end */
@@ -247,7 +247,7 @@
 /* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 end */
 
 /* ========================================================================= */
-/* СТАБИЛИЗАЦИЯ И ОПТИМИЗАЦИЯ ASUS X00TD (SDM636) */
+/* СТАБИЛИЗАЦИЯ И ОПТИМИЗАЦИЯ ASUS X00TD (SDM660) */
 /* ========================================================================= */
 
 &cci {
