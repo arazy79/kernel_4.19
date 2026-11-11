@@ -1,16 +1,26 @@
+/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+
 /dts-v1/;
 
 #include "sdm660.dtsi"
 #include "sdm660-qrd.dtsi"
-#include "sdm660-pinctrl.dtsi"
-/* Huaqin modify for add nt36672ah_kd lcm by qimaokang at 2018/08/06 start */
-#include "dsi-panel-nt36672ah-1080p-video-kd.dtsi"
-/* Huaqin modify for add nt36672ah_kd lcm by qimaokang at 2018/08/06 end */
-/* Huaqin modify for add hx83112a_tm lcm by qimaokang at 2018/09/04 start */
-#include "dsi-panel-hx83112a-1080p-video-tm.dtsi"
-/* Huaqin modify for add hx83112a_tm lcm by qimaokang at 2018/09/04 end */
-
 #include "sdm660-internal-codec.dtsi"
+
+#include "X01BD/overlay.dtsi"
+#include "X01BD/sdm660-qrd-overlay.dtsi"
+#include "X01BD/sdm660-internal-codec-overlay.dtsi"
+#include "X01BD/sdm660-external-codec-overlay.dtsi"
 
 / {
 	model = "Qualcomm Technologies, Inc. SDM 660 PM660 + PM660L QRD";
@@ -23,6 +33,15 @@
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
+};
+
+&mdss_dp_ctrl {
+	pinctrl-names = "mdss_dp_active", "mdss_dp_sleep";
+	pinctrl-0 = <&mdss_dp_aux_active &mdss_dp_usbplug_cc_active>;
+	pinctrl-1 = <&mdss_dp_aux_suspend &mdss_dp_usbplug_cc_suspend>;
+	qcom,aux-en-gpio = <&tlmm 55 0>;
+	qcom,aux-sel-gpio = <&tlmm 56 0>;
+	qcom,usbplug-cc-gpio = <&tlmm 58 0>;
 };
 
 &mdss_dsi {
@@ -41,45 +60,25 @@
 
 &mdss_dsi1 {
 	status = "disabled";
-	qcom,dsi-pref-prim-pan = <&dsi_dual_nt36850_truly_cmd>;
-	pinctrl-names = "mdss_default", "mdss_sleep";
-	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
-	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
-	qcom,platform-reset-gpio = <&tlmm 53 0>;
-	qcom,platform-te-gpio = <&tlmm 59 0>;
 };
 
 &dsi_dual_nt36850_truly_cmd {
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
-	qcom,mdss-dsi-bl-min-level = <12>;
+	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,mdss-dsi-force-clock-lane-hs;
-	/delete-property/ qcom,esd-check-enabled;
 };
 
-/* Huaqin modify for add nt36672ah_kd lcm by qimaokang at 2018/08/06 start */
 &dsi_nt36672ah_1080p_video_kd {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,mdss-dsi-bl-min-level = <12>;
-	qcom,mdss-dsi-bl-max-level = <4095>;
-	qcom,mdss-dsi-force-clock-lane-hs;
-	/delete-property/ qcom,esd-check-enabled;
+	  qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
 };
-/* Huaqin modify for add nt36672ah_kd lcm by qimaokang at 2018/08/06 end */
 
-/* Huaqin modify for add hx83112a_tm lcm by qimaokang at 2018/09/04 start */
 &dsi_hx83112a_1080p_video_tm {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,mdss-dsi-bl-min-level = <12>;
-	qcom,mdss-dsi-bl-max-level = <4095>;
-	qcom,mdss-dsi-force-clock-lane-hs;
-	/delete-property/ qcom,esd-check-enabled;
+	  qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
 };
-/* Huaqin modify for add hx83112a_tm lcm by qimaokang at 2018/09/04 end */
 
-&pm660l_lcdb {
-	status = "ok";
+&pm660l_wled {
+	qcom,string-cfg = <3>;
 };
 
 &soc {
@@ -96,24 +95,22 @@
 		qcom,dig-load = <40000>;
 		qcom,dig-vtg-min = <1808000>;
 		qcom,dig-vtg-max = <1808000>;
-		
-		qcom,fb-resume-delay-us = <15000>;
-		
+		qcom,fb-resume-delay-us = <10000>;
 		qcom,afe-force-power-on;
 		qcom,afe-power-on-delay-us = <1000>;
 		qcom,afe-power-off-delay-us = <6>;
 	};
 
-/* Huaqin add for ZQL1820-42 by puqirui at 2018/11/01 start */
 	cdfinger_fp {
 		compatible = "cdfinger,fingerprint";
 		interrupt-parent = <&tlmm>;
-		interrupts = <72 0x0>;
+		interrupts = <72 IRQ_TYPE_EDGE_RISING>;
+		cdfinger,reset_gpio = <&tlmm 20 GPIO_ACTIVE_LOW>;
+		cdfinger,irq_gpio = <&tlmm 72 GPIO_ACTIVE_HIGH>;
+		cdfinger,gpio_vdd = <&pm660l_gpios 5 GPIO_ACTIVE_HIGH>;
 
-		cdfinger,reset_gpio = <&tlmm 20 0>;
-		cdfinger,irq_gpio = <&tlmm 72 0>;
-		cdfinger,gpio_vdd = <&pm660l_gpios 5 0>;
-		pinctrl-names = "cdfinger_active","cdfinger_sleep";
+		pinctrl-names = "cdfinger_active",
+				"cdfinger_sleep";
 		pinctrl-0 = <&cdfinger_reset_active &cdfinger_irq_active>;
 		pinctrl-1 = <&cdfinger_reset_sleep &cdfinger_irq_sleep>;
 	};
@@ -121,33 +118,32 @@
 	focaltech_fingerprint {
 		compatible = "focaltech,fingerprint";
 		interrupt-parent = <&tlmm>;
-		interrupts = <72 0x0>;
-
-		fp,reset_gpio   = <&tlmm 20 0>;
-		fp,irq_gpio        = <&tlmm 72 0>;
-		fp,vdd_gpio        = <&pm660l_gpios 5 0>;
-		pinctrl-names = "focalfp_active","focalfp_sleep";
+		interrupts = <72 IRQ_TYPE_EDGE_RISING>;
+		fp,reset_gpio   = <&tlmm 20 GPIO_ACTIVE_LOW>;
+		fp,irq_gpio        = <&tlmm 72 GPIO_ACTIVE_HIGH>;
+		fp,vdd_gpio        = <&pm660l_gpios 5 GPIO_ACTIVE_HIGH>;
+        spi-max-frequency = <10000000>;
+        
+		pinctrl-names = "focalfp_active",
+				"focalfp_sleep";
 		pinctrl-0 = <&focalfp_reset_active &focalfp_irq_active>;
 		pinctrl-1 = <&focalfp_reset_sleep &focalfp_irq_sleep>;
 	};
-/* Huaqin add for ZQL1820-42 by puqirui at 2018/11/01 end */
 
-	/* Huaqin add for ZQL1820-136 by zhaojunhai1 at 2018/08/22 start */
-	/* Huaqin add for ZQL1820-145 by zhaojunhai1 at 2018/08/19 start */
-	confing_dist {
+	confing_dist{
 		compatible = "config,dist";
 		dist,mem_gpio = <&tlmm 63 0>;
 		dist,mem1_gpio = <&tlmm 64 0>;
 		dist,nfc_gpio = <&pm660_gpios 11 0>;
 		dist,cam_gpio = <&tlmm 21 0>;
 
-		pinctrl-names = "dist_mem_active","dist_cam_active","dist_mem1_active";
+		pinctrl-names = "dist_mem_active",
+				"dist_cam_active",
+				"dist_mem1_active";
 		pinctrl-0 = <&dist_mem_active>;
 		pinctrl-1 = <&dist_cam_active>;
 		pinctrl-2 = <&dist_mem1_active>;
 	};
-	/* Huaqin add for ZQL1820-145 by zhaojunhai1 at 2018/08/19 end */
-	/* Huaqin add for ZQL1820-136 by zhaojunhai1 at 2018/08/22 end */
 };
 
 &slim_aud {
@@ -158,27 +154,17 @@
 	/delete-node/sound-tavil;
 };
 
-/* Huaqin add for sar sensor by zhuqiang at 2018/08/03 start */
+/*add for SAR SENSOR*/
+
 &i2c_2 {
-	status = "okay";
 	semtech@28 {
-		compatible = "Semtech,sx9310";
-		reg = <0x28>;
-		vdd-supply  = <&pm660l_l3>;
-		vdd1-supply = <&pm660_l13>;  // for svdd
-		interrupt-parent = <&tlmm>;
-		Semtech,gpio-irq = <&tlmm 77 0x2008>; // gpio 77
-		interrupts = <77 0x2>;
-		pinctrl-names = "sarsensor_active", "sarsensor_suspend";
-		pinctrl-0 = <&sarsensor_int_active>;
-		pinctrl-1 = <&sarsensor_int_suspend>;
+		status = "disabled";
 	};
 };
-/* Huaqin add for sar sensor by zhuqiang at 2018/08/03 end */
 
-&i2c_7 {
-	/* for P/L Sensor */
+&i2c_7 { /* for P/L Sensor */
 	status = "okay";
+
 	stk@47 {
 		compatible = "stk,stk3x3x";
 		reg = <0x47>;
@@ -200,76 +186,5 @@
 		stk,ps-thdh = <1700>;
 		stk,ps-thdl = <1500>;
 		stk,transmittance = <1100>;
-
-		/* 4.19 additions (analogous to X00TD STK3x1x tuning) */
-		stk,use-fir;
-		stk,ps-gain = <4>;
-		stk,als-gain = <64>;
 	};
-};
-
-&cci {
-	qcom,eeprom@3 {
-		status = "disabled";
-	};
-
-	qcom,camera@3 {
-		status = "disabled";
-	};
-};
-
-&pm660l_wled {
-	/* ФИКС: Явно переопределяем каналы под физическую разводку дисплея X01BD (0, 1, 3)
-	 * и задаем маску 0xb (0xb0 в регистре) для устранения предупреждения WLED */
-	qcom,led-strings-list = [00 01 03];
-	qcom,enabled-strings = [00 01 03];
-	qcom,default-led-sink-config = <0xb>;
-	status = "ok";
-};
-
-&pm660_haptics {
-    compatible = "qcom,qpnp-haptics";
-    reg = <0xc000 0x100>;
-    interrupts = <0x1 0xc0 0x0 IRQ_TYPE_EDGE_BOTH>,
-                 <0x1 0xc0 0x1 IRQ_TYPE_EDGE_BOTH>;
-    interrupt-names = "hap-sc-irq", "hap-play-irq";
-    qcom,pmic-revid = <&pm660_revid>;
-
-    qcom,actuator-type = <1>;       /* 1 = ERM */
-    qcom,play-mode = "direct";
-    qcom,vmax-mv = <3596>;
-    qcom,ilim-ma = <800>;
-    qcom,sc-dbc-cycles = <8>;
-    qcom,wave-play-rate-us = <6667>;
-    qcom,en-brake;
-
-    status = "okay";
-};
-
-&sdhc_2 {
-	/* Убираем сломанный interrupt-map.
-	 * 4 ячейки для GIC (&intc 0 0 125) несовместимы
-	 * с #interrupt-cells=<3> в GIC → sdhci_pltfm_init -6 */
-	/delete-property/ interrupt-map;
-	/delete-property/ interrupt-map-mask;
-	/delete-property/ interrupt-parent;
-	/delete-property/ #interrupt-cells;
-	/delete-property/ #address-cells;
-
-	interrupts = <GIC_SPI 125 IRQ_TYPE_LEVEL_HIGH>,
-		     <GIC_SPI 221 IRQ_TYPE_LEVEL_HIGH>;
-	interrupt-names = "hc_irq", "pwr_irq";
-
-	/* Совместимость со всеми картами */
-	no-1-8-v;
-
-	pinctrl-names = "active", "sleep";
-	pinctrl-0 = <&sdc2_clk_on &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
-	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off &sdc2_cd_off>;
-
-	status = "ok";
-};
-
-&mdss_dp_pll {
-	status = "disabled";
 };
