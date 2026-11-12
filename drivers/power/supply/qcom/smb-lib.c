@@ -1795,7 +1795,7 @@ int smblib_get_prop_input_suspend(struct smb_charger *chg,
 {
 	val->intval
 		= (get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0)
-		 && get_client_vote(chg->dc_suspend_votable, USER_VOTER);
+		 && !!get_client_vote(chg->dc_suspend_votable, USER_VOTER);
 	return 0;
 }
 
@@ -1806,7 +1806,7 @@ int smblib_get_prop_charging_enabled(struct smb_charger *chg,
 {
 	val->intval
 		= !((get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0)
-		 && get_client_vote(chg->dc_suspend_votable, USER_VOTER));
+		 && !!get_client_vote(chg->dc_suspend_votable, USER_VOTER));
 	return 0;
 }
 /* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
@@ -2119,19 +2119,21 @@ int smblib_set_prop_input_suspend(struct smb_charger *chg,
 				  const union power_supply_propval *val)
 {
 	int rc;
+	bool suspend = (bool)val->intval;
 
 	/* vote 0mA when suspended */
-	rc = vote(chg->usb_icl_votable, USER_VOTER, (bool)val->intval, 0);
+	rc = vote(chg->usb_icl_votable, USER_VOTER, suspend, 0);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't vote to %s USB rc=%d\n",
-			(bool)val->intval ? "suspend" : "resume", rc);
+			suspend ? "suspend" : "resume", rc);
 		return rc;
 	}
 
-	rc = vote(chg->dc_suspend_votable, USER_VOTER, (bool)val->intval, 0);
+	rc = vote(chg->dc_suspend_votable, USER_VOTER, suspend,
+		  suspend ? 1 : 0);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't vote to %s DC rc=%d\n",
-			(bool)val->intval ? "suspend" : "resume", rc);
+			suspend ? "suspend" : "resume", rc);
 		return rc;
 	}
 
@@ -2145,22 +2147,24 @@ int smblib_set_prop_charging_enabled(struct smb_charger *chg,
 				  const union power_supply_propval *val)
 {
 	int rc;
+	bool suspend = !(bool)val->intval;
 
 	/* vote 0mA when suspended */
-	rc = vote(chg->usb_icl_votable, USER_VOTER, !(bool)val->intval, 0);
+	rc = vote(chg->usb_icl_votable, USER_VOTER, suspend, 0);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't vote to %s USB rc=%d\n",
-			(bool)val->intval ? "suspend" : "resume", rc);
+			suspend ? "suspend" : "resume", rc);
 		return rc;
 	}
 
-	rc = vote(chg->dc_suspend_votable, USER_VOTER, !(bool)val->intval, 0);
+	rc = vote(chg->dc_suspend_votable, USER_VOTER, suspend,
+		  suspend ? 1 : 0);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't vote to %s DC rc=%d\n",
-			(bool)val->intval ? "suspend" : "resume", rc);
+			suspend ? "suspend" : "resume", rc);
 		return rc;
 	}
-	
+
 	power_supply_changed(chg->batt_psy);
 	return rc;
 }
