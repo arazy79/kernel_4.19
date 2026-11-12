@@ -349,6 +349,7 @@ jobs:
           ENABLE_KSU: ${{ github.event.inputs.enable_ksu }}
         run: |
           cp "arch/arm64/configs/vendor/asus/${{ github.event.inputs.defconfig }}" out/.config
+          echo "# CONFIG_KALLSYMS_ALL is not set" >> out/.config
           if [ "$ENABLE_KSU" = "true" ]; then
             {
               echo "CONFIG_KSU=y"
@@ -370,6 +371,7 @@ jobs:
             grep -q '^CONFIG_KSU_SUSFS=y' out/.config || { echo "::error::CONFIG_KSU_SUSFS tidak aktif"; exit 1; }
             grep -E '^CONFIG_KSU' out/.config
           fi
+          grep -q '^# CONFIG_KALLSYMS_ALL is not set' out/.config || { echo "::warning::Gagal matiin KALLSYMS_ALL"; }
 
       - name: Build kernel
         working-directory: kernel
