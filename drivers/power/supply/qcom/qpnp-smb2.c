@@ -1235,19 +1235,11 @@ static int smb2_batt_set_prop(struct power_supply *psy,
 		break;
 #ifdef CONFIG_MACH_ASUS_SDM660
 /* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 start */
-	case POWER_SUPPLY_PROP_CHARGING_ENABLED: {
-		union power_supply_propval sval = {0, };
-
+	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
 		rc = smblib_set_prop_charging_enabled(chg, val);
-		if (rc < 0)
-			break;
-
-		/* charge-limit userspace only writes charging_enabled;
-		   mirror onto input_suspend so current actually cuts */
-		sval.intval = (val->intval == 0) ? 1 : 0;
-		smblib_set_prop_input_suspend(chg, &sval);
 		break;
-	}
+/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
+#endif
 /* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
 #endif
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
