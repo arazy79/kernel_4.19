@@ -1240,8 +1240,6 @@ static int smb2_batt_set_prop(struct power_supply *psy,
 		break;
 /* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
 #endif
-/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
-#endif
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
 		rc = smblib_set_prop_system_temp_level(chg, val);
 		break;
