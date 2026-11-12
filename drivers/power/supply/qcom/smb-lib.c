@@ -1793,23 +1793,19 @@ int smblib_vbus_regulator_is_enabled(struct regulator_dev *rdev)
 int smblib_get_prop_input_suspend(struct smb_charger *chg,
 				  union power_supply_propval *val)
 {
-	val->intval
-		= (get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0)
-		 && !!get_client_vote(chg->dc_suspend_votable, USER_VOTER);
+	val->intval = (get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0)
+		   && (get_client_vote(chg->dc_suspend_votable, USER_VOTER) > 0);
 	return 0;
 }
-
 #ifdef CONFIG_MACH_ASUS_SDM660
-/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 start */
 int smblib_get_prop_charging_enabled(struct smb_charger *chg,
 				  union power_supply_propval *val)
 {
-	val->intval
-		= !((get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0)
-		 && !!get_client_vote(chg->dc_suspend_votable, USER_VOTER));
+	val->intval = !(get_client_vote(chg->chg_disable_votable, USER_VOTER) > 0 ||
+			((get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0) &&
+			 (get_client_vote(chg->dc_suspend_votable, USER_VOTER) > 0)));
 	return 0;
 }
-/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
 #endif
 
 int smblib_get_prop_batt_present(struct smb_charger *chg,
@@ -2121,54 +2117,31 @@ int smblib_set_prop_input_suspend(struct smb_charger *chg,
 	int rc;
 	bool suspend = (bool)val->intval;
 
-	/* vote 0mA when suspended */
-	rc = vote(chg->usb_icl_votable, USER_VOTER, suspend, 0);
-	if (rc < 0) {
-		smblib_err(chg, "Couldn't vote to %s USB rc=%d\n",
-			suspend ? "suspend" : "resume", rc);
-		return rc;
-	}
+	/* Vote matikan jalur cas utama */
+	rc = vote(chg->chg_disable_votable, USER_VOTER, suspend, 0);
+	if (rc < 0) return rc;
 
-	rc = vote(chg->dc_suspend_votable, USER_VOTER, suspend,
-		  suspend ? 1 : 0);
-	if (rc < 0) {
-		smblib_err(chg, "Couldn't vote to %s DC rc=%d\n",
-			suspend ? "suspend" : "resume", rc);
-		return rc;
-	}
+	/* Vote matikan arus USB */
+	rc = vote(chg->usb_icl_votable, USER_VOTER, suspend, 0);
+	if (rc < 0) return rc;
+
+	/* Vote matikan arus DC */
+	rc = vote(chg->dc_suspend_votable, USER_VOTER, suspend, suspend ? 1 : 0);
+	if (rc < 0) return rc;
 
 	power_supply_changed(chg->batt_psy);
 	return rc;
 }
 
 #ifdef CONFIG_MACH_ASUS_SDM660
-/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 start */
 int smblib_set_prop_charging_enabled(struct smb_charger *chg,
 				  const union power_supply_propval *val)
 {
-	int rc;
-	bool suspend = !(bool)val->intval;
+	union power_supply_propval suspend_val;
+	suspend_val.intval = !(bool)val->intval;
 
-	/* vote 0mA when suspended */
-	rc = vote(chg->usb_icl_votable, USER_VOTER, suspend, 0);
-	if (rc < 0) {
-		smblib_err(chg, "Couldn't vote to %s USB rc=%d\n",
-			suspend ? "suspend" : "resume", rc);
-		return rc;
-	}
-
-	rc = vote(chg->dc_suspend_votable, USER_VOTER, suspend,
-		  suspend ? 1 : 0);
-	if (rc < 0) {
-		smblib_err(chg, "Couldn't vote to %s DC rc=%d\n",
-			suspend ? "suspend" : "resume", rc);
-		return rc;
-	}
-
-	power_supply_changed(chg->batt_psy);
-	return rc;
+	return smblib_set_prop_input_suspend(chg, &suspend_val);
 }
-/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
 #endif
 
 int smblib_set_prop_batt_capacity(struct smb_charger *chg,
