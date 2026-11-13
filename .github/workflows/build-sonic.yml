@@ -1,4 +1,4 @@
-name: Kernel Build 4.19 (BakaSU + SuSFS) SONIC FIXED
+name: Kernel Build 4.19 (BakaSU + SuSFS) SONIC
 
 on:
   workflow_dispatch:
