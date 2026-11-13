@@ -71,7 +71,7 @@ enum print_reason {
 #define VCONN_MAX_ATTEMPTS	3
 #define OTG_MAX_ATTEMPTS	3
 #define BOOST_BACK_STORM_COUNT	3
-#define WEAK_CHG_STORM_COUNT	8
+#define WEAK_CHG_STORM_COUNT	32
 
 enum smb_mode {
 	PARALLEL_MASTER = 0,
@@ -324,9 +324,6 @@ struct smb_charger {
 	int			fake_capacity;
 	int			fake_batt_status;
 	bool			step_chg_enabled;
-#ifdef CONFIG_MACH_ASUS_SDM660
-	int			charging_enabled;
-#endif
 	bool			sw_jeita_enabled;
 	bool			is_hdc;
 	bool			chg_done;
@@ -351,6 +348,9 @@ struct smb_charger {
 	u8			float_cfg;
 	bool			use_extcon;
 	bool			otg_present;
+	/* ASUS X00TD BSP */
+	bool			x00td_otg_active;
+	bool			x00td_charging_flow_active;
 	bool			is_audio_adapter;
 	bool			disable_stat_sw_override;
 	bool			in_chg_lock;
@@ -432,12 +432,6 @@ irqreturn_t smblib_handle_wdog_bark(int irq, void *data);
 
 int smblib_get_prop_input_suspend(struct smb_charger *chg,
 				union power_supply_propval *val);
-#ifdef CONFIG_MACH_ASUS_SDM660
-/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 start */
-int smblib_get_prop_charging_enabled(struct smb_charger *chg,
-				union power_supply_propval *val);
-/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
-#endif
 int smblib_get_prop_batt_present(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_prop_batt_capacity(struct smb_charger *chg,
@@ -458,12 +452,6 @@ int smblib_get_prop_input_current_limited(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_set_prop_input_suspend(struct smb_charger *chg,
 				const union power_supply_propval *val);
-#ifdef CONFIG_MACH_ASUS_SDM660
-/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 start */
-int smblib_set_prop_charging_enabled(struct smb_charger *chg,
-				const union power_supply_propval *val);
-/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
-#endif
 int smblib_set_prop_batt_capacity(struct smb_charger *chg,
 				const union power_supply_propval *val);
 int smblib_set_prop_batt_status(struct smb_charger *chg,

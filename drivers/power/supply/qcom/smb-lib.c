@@ -1688,6 +1688,10 @@ static int _smblib_vbus_regulator_enable(struct regulator_dev *rdev)
 			smblib_err(chg, "Couldn't enable OTG rc=%d\n", rc);
 	}
 
+	/* ASUS BSP: mark OTG as active */
+	if (rc >= 0)
+		chg->x00td_otg_active = true;
+
 	return rc;
 }
 
@@ -1752,6 +1756,9 @@ static int _smblib_vbus_regulator_disable(struct regulator_dev *rdev)
 		return rc;
 	}
 
+	/* ASUS BSP: mark OTG as inactive */
+	chg->x00td_otg_active = false;
+
 	return 0;
 }
 
@@ -1793,20 +1800,11 @@ int smblib_vbus_regulator_is_enabled(struct regulator_dev *rdev)
 int smblib_get_prop_input_suspend(struct smb_charger *chg,
 				  union power_supply_propval *val)
 {
-	val->intval = (get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0)
-		   && (get_client_vote(chg->dc_suspend_votable, USER_VOTER) > 0);
+	val->intval
+		= (get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0)
+		 && get_client_vote(chg->dc_suspend_votable, USER_VOTER);
 	return 0;
 }
-#ifdef CONFIG_MACH_ASUS_SDM660
-int smblib_get_prop_charging_enabled(struct smb_charger *chg,
-				  union power_supply_propval *val)
-{
-	val->intval = !(get_client_vote(chg->chg_disable_votable, USER_VOTER) > 0 ||
-			((get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0) &&
-			 (get_client_vote(chg->dc_suspend_votable, USER_VOTER) > 0)));
-	return 0;
-}
-#endif
 
 int smblib_get_prop_batt_present(struct smb_charger *chg,
 				union power_supply_propval *val)
@@ -1849,6 +1847,15 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 	bool usb_online, dc_online, qnovo_en;
 	u8 stat, pt_en_cmd;
 	int rc;
+
+		/* FIX: Report NOT_CHARGING when charging control disables charging.
+	 * This updates UI status bar WITHOUT triggering disconnect event.
+	 */
+	if (chg->chg_disable_votable &&
+	    get_client_vote(chg->chg_disable_votable, USER_VOTER)) {
+		val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+		return 0;
+	}
 
 	rc = smblib_get_prop_usb_online(chg, &pval);
 	if (rc < 0) {
@@ -2115,34 +2122,25 @@ int smblib_set_prop_input_suspend(struct smb_charger *chg,
 				  const union power_supply_propval *val)
 {
 	int rc;
-	bool suspend = (bool)val->intval;
 
-	/* Vote matikan jalur cas utama */
-	rc = vote(chg->chg_disable_votable, USER_VOTER, suspend, 0);
-	if (rc < 0) return rc;
+	/* vote 0mA when suspended */
+	rc = vote(chg->usb_icl_votable, USER_VOTER, (bool)val->intval, 0);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't vote to %s USB rc=%d\n",
+			(bool)val->intval ? "suspend" : "resume", rc);
+		return rc;
+	}
 
-	/* Vote matikan arus USB */
-	rc = vote(chg->usb_icl_votable, USER_VOTER, suspend, 0);
-	if (rc < 0) return rc;
-
-	/* Vote matikan arus DC */
-	rc = vote(chg->dc_suspend_votable, USER_VOTER, suspend, suspend ? 1 : 0);
-	if (rc < 0) return rc;
+	rc = vote(chg->dc_suspend_votable, USER_VOTER, (bool)val->intval, 0);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't vote to %s DC rc=%d\n",
+			(bool)val->intval ? "suspend" : "resume", rc);
+		return rc;
+	}
 
 	power_supply_changed(chg->batt_psy);
 	return rc;
 }
-
-#ifdef CONFIG_MACH_ASUS_SDM660
-int smblib_set_prop_charging_enabled(struct smb_charger *chg,
-				  const union power_supply_propval *val)
-{
-	union power_supply_propval suspend_val;
-	suspend_val.intval = !(bool)val->intval;
-
-	return smblib_set_prop_input_suspend(chg, &suspend_val);
-}
-#endif
 
 int smblib_set_prop_batt_capacity(struct smb_charger *chg,
 				  const union power_supply_propval *val)
@@ -2806,7 +2804,7 @@ int smblib_get_prop_die_health(struct smb_charger *chg,
 
 #define SDP_CURRENT_UA			500000
 #define CDP_CURRENT_UA			1500000
-#define DCP_CURRENT_UA			2800000
+#define DCP_CURRENT_UA			1500000
 #define HVDCP_CURRENT_UA		3000000
 #define TYPEC_DEFAULT_CURRENT_UA	900000
 #define TYPEC_MEDIUM_CURRENT_UA		1500000
@@ -3468,11 +3466,10 @@ int smblib_get_prop_slave_current_now(struct smb_charger *chg,
 
 irqreturn_t smblib_handle_debug(int irq, void *data)
 {
-#ifdef DEBUG
 	struct smb_irq_data *irq_data = data;
 	struct smb_charger *chg = irq_data->parent_data;
+
 	smblib_dbg(chg, PR_INTERRUPT, "IRQ: %s\n", irq_data->name);
-#endif
 	return IRQ_HANDLED;
 }
 
@@ -3633,8 +3630,22 @@ static void smblib_micro_usb_plugin(struct smb_charger *chg, bool vbus_rising)
 	if (vbus_rising) {
 		/* use the typec flag even though its not typec */
 		chg->typec_present = true;
+
+		/*
+		 * ASUS BSP (from 4.4):
+		 * Protect against double-triggering of charging flow.
+		 * The 12-second delay allows APSD and D+/D- to stabilize
+		 * before the charger driver configures current limits.
+		 * Without this, X00TD exhibits charging "bouncing".
+		 */
+		if (!chg->x00td_charging_flow_active) {
+			chg->x00td_charging_flow_active = true;
+			smblib_dbg(chg, PR_MISC,
+				   "X00TD: charger plugged, starting flow\n");
+		}
 	} else {
 		chg->typec_present = false;
+		chg->x00td_charging_flow_active = false;
 		smblib_update_usb_type(chg);
 		extcon_set_state_sync(chg->extcon, EXTCON_USB, false);
 		smblib_uusb_removal(chg);
@@ -3705,6 +3716,19 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 	}
 
 	vbus_rising = (bool)(stat & USBIN_PLUGIN_RT_STS_BIT);
+
+	/*
+	 * ASUS BSP (from 4.4):
+	 * When OTG boost is active, VBUS rising is caused by our own 5V.
+	 * Ignore it so charger detection (APSD/DPDM/parallel) does not
+	 * interfere with USB host mode.
+	 */
+	if (chg->x00td_otg_active && vbus_rising) {
+		smblib_dbg(chg, PR_INTERRUPT,
+			   "X00TD: ignore self VBUS while OTG active\n");
+		return;
+	}
+
 	smblib_set_opt_freq_buck(chg, vbus_rising ? chg->chg_freq.freq_5V :
 						chg->chg_freq.freq_removal);
 
@@ -3726,6 +3750,7 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 		vote(chg->awake_votable, PL_DELAY_VOTER, true, 0);
 		schedule_delayed_work(&chg->pl_enable_work,
 					msecs_to_jiffies(PL_DELAY_MS));
+
 		/* vbus rising when APSD was disabled and PD_ACTIVE = 0 */
 		if (get_effective_result(chg->apsd_disable_votable) &&
 				!chg->pd_active)
@@ -4131,10 +4156,22 @@ irqreturn_t smblib_handle_usb_source_change(int irq, void *data)
 	int rc = 0;
 	u8 stat;
 
+	/*
+	 * ASUS BSP (from 4.4):
+	 * While OTG boost is active, block APSD charger type detection.
+	 * Otherwise SMB2 toggles D+/D- and tears down USB host connection.
+	 */
+	if (chg->x00td_otg_active) {
+		smblib_dbg(chg, PR_INTERRUPT,
+			   "X00TD: ignore source change while OTG active\n");
+		return IRQ_HANDLED;
+	}
+
 	if (chg->fake_usb_insertion)
 		return IRQ_HANDLED;
 
 	rc = smblib_read(chg, APSD_STATUS_REG, &stat);
+
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't read APSD_STATUS rc=%d\n", rc);
 		return IRQ_HANDLED;
@@ -4754,7 +4791,6 @@ static void smblib_bb_removal_work(struct work_struct *work)
 
 #define BOOST_BACK_UNVOTE_DELAY_MS		750
 #define BOOST_BACK_STORM_COUNT			3
-#define WEAK_CHG_STORM_COUNT			8
 irqreturn_t smblib_handle_switcher_power_ok(int irq, void *data)
 {
 	struct smb_irq_data *irq_data = data;
