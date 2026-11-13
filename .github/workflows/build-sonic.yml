@@ -563,5 +563,5 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-X00TD-BakaSU${{ steps.ksu.outputs.short_sha && format('-{0}', steps.ksu.outputs.short_sha) || '-NOKSU' }}-${{ github.event.inputs.toolchain }}-${{ github.run_id }}
+          name: ${{ replace(github.workflow, ' ', '-') }}-${{ steps.ksu.outputs.short_sha && format('{0}', steps.ksu.outputs.short_sha) || 'NOKSU' }}-${{ github.event.inputs.toolchain }}-${{ github.run_id }}
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
