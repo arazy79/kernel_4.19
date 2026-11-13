@@ -559,9 +559,25 @@ jobs:
           cat out/arch/arm64/boot/Image.gz "$DTB" > out/arch/arm64/boot/Image.gz-dtb
           ls -lh out/arch/arm64/boot/Image.gz-dtb
 
+      - name: Siapkan Nama Artifact
+        id: artifact_name
+        shell: bash
+        run: |
+          # Ambil nama workflow dari environment variable
+          RAW_NAME="${{ github.workflow }}"
+          
+          # Ganti spasi dengan tanda hubung (-)
+          CLEAN_NAME=$(echo "$RAW_NAME" | tr ' ' '-')
+          
+          # Opsional: buang karakter kurung dan plus agar lebih rapi
+          CLEAN_NAME=$(echo "$CLEAN_NAME" | sed 's/[()+]//g')
+          
+          # Simpan ke output step
+          echo "clean_name=$CLEAN_NAME" >> "$GITHUB_OUTPUT"
+
       - name: Upload Image.gz-dtb
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ replace(github.workflow, ' ', '-') }}-${{ steps.ksu.outputs.short_sha && format('{0}', steps.ksu.outputs.short_sha) || 'NOKSU' }}-${{ github.event.inputs.toolchain }}-${{ github.run_id }}
+          name: ${{ steps.artifact_name.outputs.clean_name }}-${{ steps.ksu.outputs.short_sha && format('{0}', steps.ksu.outputs.short_sha) || 'NOKSU' }}-${{ github.event.inputs.toolchain }}-${{ github.run_id }}
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
