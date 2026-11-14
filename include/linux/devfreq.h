@@ -130,6 +130,8 @@ struct devfreq_dev_profile {
  * @max_freq:	Limit maximum frequency requested by user (0: none)
  * @scaling_min_freq:	Limit minimum frequency requested by OPP interface
  * @scaling_max_freq:	Limit maximum frequency requested by OPP interface
+ * @max_boost:	Flag to indicate maximum boost is enabled.
+ * @is_boost_device:	Flag to indicate this devfreq device supports boost.
  * @stop_polling:	 devfreq polling status of a device.
  * @total_trans:	Number of devfreq transitions
  * @trans_table:	Statistics of devfreq transitions
@@ -166,6 +168,8 @@ struct devfreq {
 	unsigned long max_freq;
 	unsigned long scaling_min_freq;
 	unsigned long scaling_max_freq;
+	bool max_boost;
+	bool is_boost_device;
 	bool stop_polling;
 
 	/* information for device frequency transition */
