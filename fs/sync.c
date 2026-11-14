@@ -269,7 +269,9 @@ static int do_fsync(unsigned int fd, int datasync)
 	if (f.file) {
 		ret = vfs_fsync(f.file, datasync);
 		fdput(f);
+#ifdef CONFIG_DYNAMIC_FSYNC
 		inc_syscfs(current);
+#endif
 	}
 	return ret;
 }
