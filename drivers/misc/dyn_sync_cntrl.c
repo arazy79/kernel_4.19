@@ -5,6 +5,9 @@
  * Fix: flush on resume is now done from a workqueue, not directly in the
  * resume path (avoids deadlock/hang when workers are still frozen).
  * Panic notifier removed (syncing in panic context is unsafe).
+ *
+ * Fix for kernel 4.19: sync_filesystems() was removed in 4.17+.
+ * Replaced with ksys_sync() from <linux/syscalls.h>.
  */
 
 #include <linux/kernel.h>
@@ -16,6 +19,7 @@
 #include <linux/reboot.h>
 #include <linux/workqueue.h>
 #include <linux/writeback.h>
+#include <linux/syscalls.h>
 #include <linux/dyn_sync_cntrl.h>
 
 #define DYN_FSYNC_ACTIVE_DEFAULT true
@@ -25,12 +29,9 @@
 bool suspend_active = false;
 bool dyn_fsync_active = DYN_FSYNC_ACTIVE_DEFAULT;
 
-extern void sync_filesystems(int wait);
-
 static void dyn_fsync_force_flush(void)
 {
-	sync_filesystems(0);
-	sync_filesystems(1);
+	ksys_sync();
 }
 
 static void dyn_fsync_flush_fn(struct work_struct *work)
