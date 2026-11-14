@@ -16,11 +16,21 @@
 #include <linux/pagemap.h>
 #include <linux/quotaops.h>
 #include <linux/backing-dev.h>
+#include <linux/module.h>
 #include "internal.h"
 
 #ifdef CONFIG_DYNAMIC_FSYNC
 #include <linux/dyn_sync_cntrl.h>
 #endif
+
+/*
+ * Global toggle for fsync/fdatasync/sync_file_range.
+ * Default ON to preserve standard behavior. Can be toggled at runtime via
+ * /sys/module/kernel/parameters/fsync_enabled (0 = disabled, 1 = enabled).
+ */
+bool fsync_enabled = true;
+EXPORT_SYMBOL(fsync_enabled);
+module_param_named(fsync_enabled, fsync_enabled, bool, 0644);
 
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \
 			SYNC_FILE_RANGE_WAIT_AFTER)
