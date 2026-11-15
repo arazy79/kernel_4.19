@@ -253,5 +253,9 @@
 			17000 15500 30000 8000 3000>;
 		qcom,mdss-dsi-panel-peak-brightness = <4200000>;
 		qcom,mdss-dsi-panel-blackness-level = <3230>;
+		qcom,mdss-dsi-hdr-enabled;
+		qcom,mdss-dsi-wcg-enabled;
+		qcom,mdss-dsi-panel-hdr-type = "hdr10,hdr10_plus,hlg";
+		qcom,mdss-dsi-panel-color-gamut = "dci_p3,bt2020";
 	};
 };
