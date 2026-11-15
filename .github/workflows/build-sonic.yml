@@ -417,10 +417,57 @@ jobs:
           key: ${{ steps.tc.outputs.key }}
 
       - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick libncurses-dev lib32readline-dev lib32z1-dev liblz4-tool libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev
-          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi clang llvm lld zstd wget xz-utils
+          set -e
+
+          # Force Azure mirror (routing khusus GitHub Actions, lebih stabil)
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [ -f "$f" ]; then
+              sudo sed -i -E 's|https?://(archive|security)\.ubuntu\.com|http://azure.archive.ubuntu.com|g' "$f"
+            fi
+          done
+
+          # Retry wrapper: jalankan command, retry max 3x dengan delay 10s
+          retry() {
+            local n=1 max=3 delay=10
+            while true; do
+              "$@" && return 0
+              if [[ $n -lt $max ]]; then
+                echo "::warning::attempt $n/$max failed, retrying in ${delay}s..."
+                sleep $delay
+                ((n++))
+              else
+                echo "::error::failed after $n attempts: $*"
+                return 1
+              fi
+            done
+          }
+
+          # Opsi apt biar anti-hang
+          APT_OPTS=(
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+            -o Acquire::Retries=3
+            -o Acquire::ForceIPv4=true
+            -o Acquire::http::Pipeline-Depth=0
+            -o Acquire::http::No-Cache=true
+            -o Dpkg::Options::=--force-confdef
+            -o Dpkg::Options::=--force-confold
+          )
+
+          # Update (soft-fail: kalau gagal total, tetap lanjut pakai cache runner)
+          retry sudo timeout 180 apt-get update "${APT_OPTS[@]}" \
+            || echo "::warning::apt update partially failed, lanjut dengan cache bawaan runner"
+
+          # Install gabungan
+          retry sudo timeout 900 apt-get install -y --fix-missing "${APT_OPTS[@]}" \
+            bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git gnupg gperf imagemagick libncurses-dev lib32readline-dev lib32z1-dev \
+            liblz4-tool libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
+            schedtool squashfs-tools xsltproc zip zlib1g-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi clang llvm lld zstd wget xz-utils
 
       - name: Fetch toolchain
         if: ${{ github.event.inputs.toolchain != 'default' && steps.tc_cache.outputs.cache-hit != 'true' }}
