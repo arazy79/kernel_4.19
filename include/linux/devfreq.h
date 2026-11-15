@@ -124,6 +124,7 @@ struct devfreq_dev_profile {
  *		devfreq.nb to the corresponding register notifier call chain.
  * @work:	delayed work for load monitoring.
  * @previous_freq:	previously configured frequency value.
+ * @is_boost_device:	true if this devfreq device is a boost device.
  * @data:	Private data of the governor. The devfreq framework does not
  *		touch this.
  * @min_freq:	Limit minimum frequency requested by user (0: none)
@@ -159,6 +160,8 @@ struct devfreq {
 
 	unsigned long previous_freq;
 	struct devfreq_dev_status last_status;
+
+	bool is_boost_device;
 
 	void *data; /* private data for governors */
 
