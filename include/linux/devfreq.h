@@ -125,6 +125,7 @@ struct devfreq_dev_profile {
  * @work:	delayed work for load monitoring.
  * @previous_freq:	previously configured frequency value.
  * @is_boost_device:	true if this devfreq device is a boost device.
+ * @max_boost:		true if this devfreq device is forced to max freq.
  * @data:	Private data of the governor. The devfreq framework does not
  *		touch this.
  * @min_freq:	Limit minimum frequency requested by user (0: none)
@@ -162,6 +163,7 @@ struct devfreq {
 	struct devfreq_dev_status last_status;
 
 	bool is_boost_device;
+	bool max_boost;
 
 	void *data; /* private data for governors */
 
@@ -202,6 +204,8 @@ extern void devm_devfreq_remove_device(struct device *dev,
 /* Supposed to be called by PM callbacks */
 extern int devfreq_suspend_device(struct devfreq *devfreq);
 extern int devfreq_resume_device(struct devfreq *devfreq);
+
+extern int update_devfreq(struct devfreq *devfreq);
 
 /* Helper functions for devfreq user device driver with OPP. */
 extern struct dev_pm_opp *devfreq_recommended_opp(struct device *dev,
@@ -321,6 +325,11 @@ static inline int devfreq_suspend_device(struct devfreq *devfreq)
 }
 
 static inline int devfreq_resume_device(struct devfreq *devfreq)
+{
+	return 0;
+}
+
+static inline int update_devfreq(struct devfreq *devfreq)
 {
 	return 0;
 }
