@@ -328,14 +328,20 @@ int update_devfreq(struct devfreq *devfreq)
 	max_freq = MIN(devfreq->scaling_max_freq, devfreq->max_freq);
 	min_freq = MAX(devfreq->scaling_min_freq, devfreq->min_freq);
 
-	if (freq < min_freq) {
-		freq = min_freq;
-		flags &= ~DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use GLB */
-	}
-	if (freq > max_freq) {
+	/* === FIX: max_boost === */
+	if (devfreq->max_boost) {
 		freq = max_freq;
-		flags |= DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use LUB */
+	} else {
+		if (freq < min_freq) {
+			freq = min_freq;
+			flags &= ~DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use GLB */
+		}
+		if (freq > max_freq) {
+			freq = max_freq;
+			flags |= DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use LUB */
+		}
 	}
+	/* === END FIX === */
 
 	if (devfreq->profile->get_cur_freq)
 		devfreq->profile->get_cur_freq(devfreq->dev.parent, &cur_freq);
@@ -364,7 +370,6 @@ int update_devfreq(struct devfreq *devfreq)
 	return err;
 }
 EXPORT_SYMBOL(update_devfreq);
-
 /**
  * devfreq_monitor() - Periodically poll devfreq objects.
  * @work:	the work struct used to run devfreq_monitor periodically.
@@ -744,7 +749,6 @@ int devfreq_remove_device(struct devfreq *devfreq)
 	return 0;
 }
 EXPORT_SYMBOL(devfreq_remove_device);
-
 static int devm_devfreq_dev_match(struct device *dev, void *res, void *data)
 {
 	struct devfreq **r = res;
@@ -1220,7 +1224,7 @@ static ssize_t min_freq_store(struct device *dev, struct device_attribute *attr,
 	/* Minfreq is managed by devfreq_boost */
 	if (df->is_boost_device)
 		return count;
-	
+
 	ret = sscanf(buf, "%lu", &value);
 	if (ret != 1)
 		return -EINVAL;
