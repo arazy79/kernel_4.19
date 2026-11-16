@@ -34,26 +34,12 @@
 
 static struct class *devfreq_class;
 
-/*
- * devfreq core provides delayed work based load monitoring helper
- * functions. Governors can use these or can implement their own
- * monitoring mechanism.
- */
 static struct workqueue_struct *devfreq_wq;
 
-/* The list of all device-devfreq governors */
 static LIST_HEAD(devfreq_governor_list);
-/* The list of all device-devfreq */
 static LIST_HEAD(devfreq_list);
 static DEFINE_MUTEX(devfreq_list_lock);
 
-/**
- * find_device_devfreq() - find devfreq struct using device pointer
- * @dev:	device pointer used to lookup device devfreq.
- *
- * Search the list of device devfreqs and return the matched device's
- * devfreq info. devfreq_list_lock should be held by the caller.
- */
 static struct devfreq *find_device_devfreq(struct device *dev)
 {
 	struct devfreq *tmp_devfreq;
@@ -101,11 +87,6 @@ static long find_available_max_freq(struct devfreq *devfreq)
 	return max_freq;
 }
 
-/**
- * devfreq_get_freq_level() - Lookup freq_table for the frequency
- * @devfreq:	the devfreq instance
- * @freq:	the target frequency
- */
 static int devfreq_get_freq_level(struct devfreq *devfreq, unsigned long freq)
 {
 	int lev;
@@ -124,7 +105,6 @@ static int set_freq_table(struct devfreq *devfreq)
 	unsigned long freq;
 	int i, count;
 
-	/* Initialize the freq_table from OPP table */
 	count = dev_pm_opp_get_opp_count(devfreq->dev.parent);
 	if (count <= 0)
 		return -EINVAL;
@@ -153,11 +133,6 @@ static int set_freq_table(struct devfreq *devfreq)
 	return 0;
 }
 
-/**
- * devfreq_update_status() - Update statistics of devfreq behavior
- * @devfreq:	the devfreq instance
- * @freq:	the update target frequency
- */
 int devfreq_update_status(struct devfreq *devfreq, unsigned long freq)
 {
 	int lev, prev_lev, ret = 0;
@@ -166,7 +141,6 @@ int devfreq_update_status(struct devfreq *devfreq, unsigned long freq)
 	lockdep_assert_held(&devfreq->lock);
 	cur_time = jiffies;
 
-	/* Immediately exit if previous_freq is not initialized yet. */
 	if (!devfreq->previous_freq)
 		goto out;
 
@@ -197,13 +171,6 @@ out:
 }
 EXPORT_SYMBOL(devfreq_update_status);
 
-/**
- * find_devfreq_governor() - find devfreq governor from name
- * @name:	name of the governor
- *
- * Search the list of devfreq governors and return the matched
- * governor's pointer. devfreq_list_lock should be held by the caller.
- */
 static struct devfreq_governor *find_devfreq_governor(const char *name)
 {
 	struct devfreq_governor *tmp_governor;
@@ -223,17 +190,6 @@ static struct devfreq_governor *find_devfreq_governor(const char *name)
 	return ERR_PTR(-ENODEV);
 }
 
-/**
- * try_then_request_governor() - Try to find the governor and request the
- *                               module if is not found.
- * @name:	name of the governor
- *
- * Search the list of devfreq governors and request the module and try again
- * if is not found. This can happen when both drivers (the governor driver
- * and the driver that call devfreq_add_device) are built as modules.
- * devfreq_list_lock should be held by the caller. Returns the matched
- * governor's pointer or an error pointer.
- */
 static struct devfreq_governor *try_then_request_governor(const char *name)
 {
 	struct devfreq_governor *governor;
@@ -255,7 +211,6 @@ static struct devfreq_governor *try_then_request_governor(const char *name)
 			err = request_module("governor_%s", "simpleondemand");
 		else
 			err = request_module("governor_%s", name);
-		/* Restore previous state before return */
 		mutex_lock(&devfreq_list_lock);
 		if (err)
 			return (err < 0) ? ERR_PTR(err) : ERR_PTR(-EINVAL);
@@ -289,14 +244,9 @@ static int devfreq_notify_transition(struct devfreq *devfreq,
 	return 0;
 }
 
-/* Load monitoring helper functions for governors use */
-
 /**
  * update_devfreq() - Reevaluate the device and configure frequency.
  * @devfreq:	the devfreq instance.
- *
- * Note: Lock devfreq->lock before calling update_devfreq
- *	 This function is exported for governors.
  */
 int update_devfreq(struct devfreq *devfreq)
 {
@@ -318,17 +268,13 @@ int update_devfreq(struct devfreq *devfreq)
 	if (err)
 		return err;
 
-	/*
-	 * Adjust the frequency with user freq, QoS and available freq.
-	 *
-	 * List from the highest priority
-	 * max_freq
-	 * min_freq
-	 */
 	max_freq = MIN(devfreq->scaling_max_freq, devfreq->max_freq);
 	min_freq = MAX(devfreq->scaling_min_freq, devfreq->min_freq);
 
-	/* === FIX: max_boost === */
+	/* ==================================================================== */
+	/* === FIX: TAMBAHAN DARI KITA (devfreq_boost & Filter GPU) === */
+	
+	/* 1. Logika max_boost dari cherry-pick devfreq_boost */
 	if (devfreq->max_boost) {
 		freq = max_freq;
 	} else {
@@ -341,7 +287,14 @@ int update_devfreq(struct devfreq *devfreq)
 			flags |= DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use LUB */
 		}
 	}
+
+	/* 2. Filter Khusus GPU: Cegah Thermal HAL nge-cap di bawah 750MHz */
+	if (!strcmp(dev_name(&devfreq->dev), "5000000.qcom,kgsl-3d0")) {
+		if (max_freq < 750000000)
+			max_freq = 750000000;
+	}
 	/* === END FIX === */
+	/* ==================================================================== */
 
 	if (devfreq->profile->get_cur_freq)
 		devfreq->profile->get_cur_freq(devfreq->dev.parent, &cur_freq);
@@ -370,6 +323,7 @@ int update_devfreq(struct devfreq *devfreq)
 	return err;
 }
 EXPORT_SYMBOL(update_devfreq);
+
 /**
  * devfreq_monitor() - Periodically poll devfreq objects.
  * @work:	the work struct used to run devfreq_monitor periodically.
