@@ -328,14 +328,43 @@ int update_devfreq(struct devfreq *devfreq)
 	max_freq = MIN(devfreq->scaling_max_freq, devfreq->max_freq);
 	min_freq = MAX(devfreq->scaling_min_freq, devfreq->min_freq);
 
-	if (freq < min_freq) {
-		freq = min_freq;
-		flags &= ~DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use GLB */
+	/* ==================================================================== */
+	/* === FIX: GPU Filter DULU (Naikin ceiling SEBELUM clamping) === */
+	if (!strcmp(dev_name(&devfreq->dev), "5000000.qcom,kgsl-3d0")) {
+		if (max_freq < 750000000)
+			max_freq = 750000000;
 	}
-	if (freq > max_freq) {
+
+	/* === FIX: CPU-DDR Bandwidth (cpubw) Floor === */
+	/* Karena governor "performance" aja masih di-rem thermal, kita paksa disini */
+	if (!strcmp(dev_name(&devfreq->dev), "soc:qcom,cpu-cpu-ddr-bw")) {
+		/* PILIH SALAH SATU: */
+		/* 1. Mau kenceng maksimal (6881) tapi boros baterai: */
+		// if (max_freq < 6881) max_freq = 6881;
+		
+		/* 2. Mau seimbang (5161) - Rekomendasi gw: */
+		if (max_freq < 6881)
+			max_freq = 6881;
+		if (min_freq < 2929)
+			min_freq = 2929;
+	}
+	/* === END FIX === */
+
+	/* === FIX: Logika max_boost === */
+	if (devfreq->max_boost) {
 		freq = max_freq;
-		flags |= DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use LUB */
+	} else {
+		if (freq < min_freq) {
+			freq = min_freq;
+			flags &= ~DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use GLB */
+		}
+		if (freq > max_freq) {
+			freq = max_freq;
+			flags |= DEVFREQ_FLAG_LEAST_UPPER_BOUND; /* Use LUB */
+		}
 	}
+	/* === END FIX === */
+	/* ==================================================================== */
 
 	if (devfreq->profile->get_cur_freq)
 		devfreq->profile->get_cur_freq(devfreq->dev.parent, &cur_freq);
