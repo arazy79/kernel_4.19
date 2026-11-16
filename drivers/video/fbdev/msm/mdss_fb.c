@@ -689,10 +689,10 @@ static ssize_t msm_fb_panel_info_show(struct device *dev,
 			pinfo->is_pluggable, pinfo->display_id,
 			pinfo->is_cec_supported, is_pingpong_split(mfd),
 			dfps_porch_mode, pinfo->partial_update_enabled,
-			is_panel_split(mfd), 1,
-			10000000,
-			0,
-			5000000,
+			is_panel_split(mfd), pinfo->hdr_properties.hdr_enabled,
+			pinfo->hdr_properties.peak_brightness,
+			pinfo->hdr_properties.blackness_level,
+			pinfo->hdr_properties.avg_brightness,
 			pinfo->hdr_properties.display_primaries[0],
 			pinfo->hdr_properties.display_primaries[1],
 			pinfo->hdr_properties.display_primaries[2],
@@ -978,19 +978,6 @@ static ssize_t idle_power_collapse_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "idle power collapsed\n");
 }
 
-/* === FAKE HDR + WCG GIMMICK === */
-static ssize_t mdss_fb_hdr_cap_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "HDR10,HDR10+,HLG\n");
-}
-
-static ssize_t mdss_fb_wcg_cap_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "DCI-P3,Display-P3,BT2020\n");
-}
-
 static DEVICE_ATTR_RO(msm_fb_type);
 static DEVICE_ATTR_RW(msm_fb_split);
 static DEVICE_ATTR_RO(show_blank_event);
@@ -1005,8 +992,6 @@ static DEVICE_ATTR_RW(msm_fb_dfps_mode);
 static DEVICE_ATTR_RO(measured_fps);
 static DEVICE_ATTR_RW(msm_fb_persist_mode);
 static DEVICE_ATTR_RO(idle_power_collapse);
-static DEVICE_ATTR(hdr_cap, 0444, mdss_fb_hdr_cap_show, NULL);
-static DEVICE_ATTR(wcg_cap, 0444, mdss_fb_wcg_cap_show, NULL);
 
 static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_type.attr,
@@ -1023,8 +1008,6 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_measured_fps.attr,
 	&dev_attr_msm_fb_persist_mode.attr,
 	&dev_attr_idle_power_collapse.attr,
-	&dev_attr_hdr_cap.attr,
-	&dev_attr_wcg_cap.attr,
 	NULL,
 };
 
