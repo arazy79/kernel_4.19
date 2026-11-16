@@ -48,8 +48,9 @@ static void devfreq_max_unboost(struct work_struct *work);
 }
 
 static struct df_boost_drv df_boost_drv_g __read_mostly = {
-	BOOST_DEV_INIT(df_boost_drv_g, DEVFREQ_MSM_CPUBW,
-		       CONFIG_DEVFREQ_MSM_CPUBW_BOOST_FREQ)
+	/* CPUBW & KGSL di-set ULONG_MAX biar otomatis nge-push ke batas maksimum (750MHz/6881) */
+	BOOST_DEV_INIT(df_boost_drv_g, DEVFREQ_MSM_CPUBW, ULONG_MAX),
+	BOOST_DEV_INIT(df_boost_drv_g, DEVFREQ_KGSL, ULONG_MAX)
 };
 
 static void __devfreq_boost_kick(struct boost_dev *b)
@@ -83,7 +84,6 @@ static void __devfreq_boost_kick_max(struct boost_dev *b,
 		curr_expires = atomic_long_read(&b->max_boost_expires);
 		new_expires = jiffies + boost_jiffies;
 
-		/* Skip this boost if there's a longer boost in effect */
 		if (time_after(curr_expires, new_expires))
 			return;
 	} while (atomic_long_cmpxchg(&b->max_boost_expires, curr_expires,
@@ -111,6 +111,7 @@ void devfreq_register_boost_device(enum df_device device, struct devfreq *df)
 	b = d->devices + device;
 	WRITE_ONCE(b->df, df);
 }
+EXPORT_SYMBOL(devfreq_register_boost_device);
 
 static void devfreq_input_unboost(struct work_struct *work)
 {
@@ -133,15 +134,19 @@ static void devfreq_max_unboost(struct work_struct *work)
 static void devfreq_update_boosts(struct boost_dev *b, unsigned long state)
 {
 	struct devfreq *df = b->df;
+	unsigned long boost_freq;
 
 	mutex_lock(&df->lock);
 	if (test_bit(SCREEN_OFF, &state)) {
 		df->min_freq = df->profile->freq_table[0];
 		df->max_boost = false;
 	} else {
+		boost_freq = b->boost_freq;
+		if (boost_freq > df->max_freq)
+			boost_freq = df->max_freq;
+
 		df->min_freq = test_bit(INPUT_BOOST, &state) ?
-			       min(b->boost_freq, df->max_freq) :
-			       df->profile->freq_table[0];
+			       boost_freq : df->profile->freq_table[0];
 		df->max_boost = test_bit(MAX_BOOST, &state);
 	}
 	update_devfreq(df);
@@ -150,13 +155,13 @@ static void devfreq_update_boosts(struct boost_dev *b, unsigned long state)
 
 static int devfreq_boost_thread(void *data)
 {
-	static const struct sched_param sched_max_rt_prio = {
-		.sched_priority = MAX_RT_PRIO - 1
-	};
 	struct boost_dev *b = data;
 	unsigned long old_state = 0;
 
-	sched_setscheduler_nocheck(current, SCHED_FIFO, &sched_max_rt_prio);
+	/* 
+	 * FIX REBOOT: RT Scheduler (MAX_RT_PRIO) DIHAPUS!
+	 * Jangan pernah pasang RT priority di 4.19, watchdog bakal panic.
+	 */
 
 	while (1) {
 		bool should_stop = false;
@@ -182,11 +187,9 @@ static int fb_notifier_cb(struct notifier_block *nb, unsigned long action,
 	struct df_boost_drv *d = container_of(nb, typeof(*d), fb_notif);
 	int i, *blank = ((struct fb_event *)data)->data;
 
-	/* Parse framebuffer blank events as soon as they occur */
 	if (action != FB_EARLY_EVENT_BLANK)
 		return NOTIFY_OK;
 
-	/* Boost when the screen turns on and unboost when it turns off */
 	for (i = 0; i < DEVFREQ_MAX; i++) {
 		struct boost_dev *b = d->devices + i;
 
@@ -254,7 +257,6 @@ static void devfreq_boost_input_disconnect(struct input_handle *handle)
 }
 
 static const struct input_device_id devfreq_boost_ids[] = {
-	/* Multi-touch touchscreen */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
 			INPUT_DEVICE_ID_MATCH_ABSBIT,
@@ -263,7 +265,6 @@ static const struct input_device_id devfreq_boost_ids[] = {
 			BIT_MASK(ABS_MT_POSITION_X) |
 			BIT_MASK(ABS_MT_POSITION_Y) }
 	},
-	/* Touchpad */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_KEYBIT |
 			INPUT_DEVICE_ID_MATCH_ABSBIT,
@@ -271,7 +272,6 @@ static const struct input_device_id devfreq_boost_ids[] = {
 		.absbit = { [BIT_WORD(ABS_X)] =
 			BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) }
 	},
-	/* Keypad */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
 		.evbit = { BIT_MASK(EV_KEY) }
