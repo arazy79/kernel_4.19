@@ -7,6 +7,7 @@
 #include <linux/devfreq_cooling.h>
 #include <linux/slab.h>
 #include <linux/msm_kgsl.h>
+#include <linux/devfreq_boost.h>
 
 #include "kgsl_device.h"
 #include "kgsl_pwrscale.h"
@@ -1040,6 +1041,8 @@ int kgsl_pwrscale_init(struct device *dev, const char *governor)
 	if (IS_ERR(devfreq)) {
 		device->pwrscale.enabled = false;
 		return PTR_ERR(devfreq);
+
+		devfreq_register_boost_device(DEVFREQ_KGSL, devfreq);
 	}
 
 	pwrscale->devfreqptr = devfreq;
