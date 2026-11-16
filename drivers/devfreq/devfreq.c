@@ -277,6 +277,21 @@ int update_devfreq(struct devfreq *devfreq)
 			max_freq = 750000000;
 	}
 
+	/* === FIX: CPU-DDR Bandwidth (cpubw) Floor === */
+	/* Karena governor "performance" aja masih di-rem thermal, kita paksa disini */
+	if (!strcmp(dev_name(&devfreq->dev), "soc:qcom,cpu-cpu-ddr-bw")) {
+		/* PILIH SALAH SATU: */
+		/* 1. Mau kenceng maksimal (6881) tapi boros baterai: */
+		// if (max_freq < 6881) max_freq = 6881;
+		
+		/* 2. Mau seimbang (5161) - Rekomendasi gw: */
+		if (max_freq < 6881)
+			max_freq = 6881;
+		if (min_freq < 5161)
+			min_freq = 5161;
+	}
+	/* === END FIX === */
+
 	/* === FIX: Logika max_boost === */
 	if (devfreq->max_boost) {
 		freq = max_freq;
