@@ -333,6 +333,8 @@ int update_devfreq(struct devfreq *devfreq)
 	if (!strcmp(dev_name(&devfreq->dev), "5000000.qcom,kgsl-3d0")) {
 		if (max_freq < 750000000)
 			max_freq = 750000000;
+		if (min_freq < 160000000)
+			min_freq = 160000000;		
 	}
 
 	/* === FIX: CPU-DDR Bandwidth (cpubw) Floor === */
