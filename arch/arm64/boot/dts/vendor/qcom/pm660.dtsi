@@ -538,7 +538,7 @@
 			qcom,pmic-misc = <&pm660_misc>;
 			qcom,misc-clk-trim-error-reg = <0xf3>;
 			qcom,actuator-type = "lra";
-			qcom,vmax-mv = <1600>;
+			qcom,vmax-mv = <1500>;
 			qcom,play-rate-us = <1200>;
 			qcom,lra-resonance-sig-shape = "sine";
 			qcom,lra-auto-resonance-mode = "qwd";
