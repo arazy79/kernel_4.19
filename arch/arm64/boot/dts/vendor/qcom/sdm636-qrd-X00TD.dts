@@ -277,7 +277,7 @@
 
     qcom,actuator-type = <1>;       /* 1 = ERM */
     qcom,play-mode = "direct";
-    qcom,vmax-mv = <3596>;
+    qcom,vmax-mv = <1500>;
     qcom,ilim-ma = <800>;
     qcom,sc-dbc-cycles = <8>;
     qcom,wave-play-rate-us = <6667>;
