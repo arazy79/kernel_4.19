@@ -210,19 +210,19 @@
 
 /* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 start */
 			qcom,thermal-mitigation
-					= <3000000 2500000 2000000 1500000
-						1000000 500000>;
+					= <3000000 3000000 2800000 2600000
+						2400000 2100000>;
 /* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 end */
 			// Added by huqinmin remove Type-C for micro-usb 2018/1/31 begin
 			qcom,use-extcon;
 			// Added by huqinmin remove Type-C for micro-usb 2018/1/31 end
 /* Huaqin modify for ZQL1650 by fangaijun  at 2018/02/2 start */
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 start */
-			qcom,fcc-max-ua = <2000000>;
+			qcom,fcc-max-ua = <3000000>;
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 end */
 			qcom,fv-max-uv = <4350000>;
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 start */
-			qcom,usb-icl-ua = <2000000>;
+			qcom,usb-icl-ua = <2500000>;
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 end */
 			qcom,float-option = <1>;
 /* Huaqin modify for ZQL1650 by fangaijun  at 2018/02/2 end */
