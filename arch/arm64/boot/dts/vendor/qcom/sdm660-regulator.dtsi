@@ -550,12 +550,12 @@
 
 
 		qcom,cpr-sensor-time = <1000>;
-		qcom,cpr-loop-time = <5000000>;
-		qcom,cpr-idle-cycles = <15>;
+		qcom,cpr-loop-time = <2500000>;
+		qcom,cpr-idle-cycles = <12>;
 		qcom,cpr-step-quot-init-min = <12>;
 		qcom,cpr-step-quot-init-max = <14>;
 		qcom,cpr-count-mode = <0>;		/* All at once */
-		qcom,cpr-count-repeat = <14>;
+		qcom,cpr-count-repeat = <15>;
 		qcom,cpr-reset-step-quot-loop-en;
 
 		vdd-supply = <&gfx_stub_vreg>;
@@ -571,38 +571,51 @@
 			qcom,cpr-up-threshold = <2>;
 			qcom,cpr-down-threshold = <2>;
 
-			gfx_vreg_corner: regulator {
-				regulator-name = "gfx_corner";
-				regulator-min-microvolt = <1>;
-				regulator-max-microvolt = <7>;
+	thread@0 {
+		qcom,cpr-thread-id = <0>;
+		qcom,cpr-consecutive-up = <0>;
+		qcom,cpr-consecutive-down = <2>;
+		qcom,cpr-up-threshold = <2>;
+		qcom,cpr-down-threshold = <2>;
 
-				qcom,cpr-fuse-corners = <6>;
-				qcom,cpr-fuse-combos = <8>;
-				qcom,cpr-corners = <7>;
+		gfx_vreg_corner: regulator {
+			regulator-name = "gfx_corner";
+			regulator-min-microvolt = <1>;
+			regulator-max-microvolt = <10>;  
 
-				qcom,cpr-corner-fmax-map = <1 2 3 4 5 6>;
+			qcom,cpr-fuse-corners = <6>;   
+			qcom,cpr-fuse-combos = <8>;    
+			qcom,cpr-corners = <10>;        
 
-				qcom,cpr-voltage-ceiling =
-					<585000  645000  725000  790000
-					 870000  925000 1070000>;
-				qcom,cpr-voltage-floor =
-					<504000  504000  596000  652000
-					 712000  744000 1070000>;
+			qcom,cpr-corner-fmax-map =
+				<1 2 3 4 5 6 6 6 6 6>;
 
-				qcom,mem-acc-voltage = <1 1 1 2 2 2 2>;
-				qcom,system-voltage =
-					<RPM_SMD_REGULATOR_LEVEL_LOW_SVS>,
-					<RPM_SMD_REGULATOR_LEVEL_LOW_SVS>,
-					<RPM_SMD_REGULATOR_LEVEL_SVS>,
-					<RPM_SMD_REGULATOR_LEVEL_SVS_PLUS>,
-					<RPM_SMD_REGULATOR_LEVEL_NOM>,
-					<RPM_SMD_REGULATOR_LEVEL_NOM_PLUS>,
-					<RPM_SMD_REGULATOR_LEVEL_TURBO>;
+			qcom,cpr-voltage-ceiling =
+				<585000  645000  690000  725000  758000
+				 790000  830000  870000  925000 1070000>;
 
-				qcom,corner-frequencies =
-					<160000000 266000000 370000000
-					 465000000 588000000 647000000
-					 750000000>;
+			qcom,cpr-voltage-floor =
+				<504000  504000  550000  596000  624000
+				 652000  682000  712000  744000 1070000>;
+
+			qcom,mem-acc-voltage =
+				<1 1 1 2 2 2 2 2 2 2>;
+
+			qcom,system-voltage =
+				<RPM_SMD_REGULATOR_LEVEL_LOW_SVS>,
+				<RPM_SMD_REGULATOR_LEVEL_LOW_SVS>,
+				<RPM_SMD_REGULATOR_LEVEL_SVS>,
+				<RPM_SMD_REGULATOR_LEVEL_SVS>,
+				<RPM_SMD_REGULATOR_LEVEL_SVS_PLUS>,
+				<RPM_SMD_REGULATOR_LEVEL_SVS_PLUS>,
+				<RPM_SMD_REGULATOR_LEVEL_NOM>,
+				<RPM_SMD_REGULATOR_LEVEL_NOM>,
+				<RPM_SMD_REGULATOR_LEVEL_NOM_PLUS>,
+				<RPM_SMD_REGULATOR_LEVEL_TURBO>;
+
+			qcom,corner-frequencies =
+				<160000000 266000000 318000000 370000000 418000000
+				 465000000 526000000 588000000 647000000 750000000>;
 
 				qcom,cpr-target-quotients =
 					<0    0    0    0     0    0  174  167
