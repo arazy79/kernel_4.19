@@ -558,83 +558,101 @@
 		qcom,voltage-step = <5000>;
 		vdd-thread0-ldo-supply = <&gfx_ldo_vreg>;
 
-		thread@0 {
-			qcom,cpr-thread-id = <0>;
-			qcom,cpr-consecutive-up = <0>;
-			qcom,cpr-consecutive-down = <2>;
-			qcom,cpr-up-threshold = <2>;
-			qcom,cpr-down-threshold = <2>;
+thread@0 {
+		qcom,cpr-thread-id = <0>;
+		qcom,cpr-consecutive-up = <0>;
+		qcom,cpr-consecutive-down = <2>;
+		qcom,cpr-up-threshold = <2>;
+		qcom,cpr-down-threshold = <2>;
 
-			gfx_vreg_corner: regulator {
-				regulator-name = "gfx_corner";
-				regulator-min-microvolt = <1>;
-				regulator-max-microvolt = <7>;
+		gfx_vreg_corner: regulator {
+			regulator-name = "gfx_corner";
+			regulator-min-microvolt = <1>;
+			regulator-max-microvolt = <10>;
 
-				qcom,cpr-fuse-corners = <6>;
-				qcom,cpr-fuse-combos = <8>;
-				qcom,cpr-corners = <7>;
+			qcom,cpr-fuse-corners = <6>;
+			qcom,cpr-fuse-combos = <8>;
+			qcom,cpr-corners = <10>;
 
-				qcom,cpr-corner-fmax-map = <1 2 3 4 5 6>;
+			qcom,cpr-corner-fmax-map =
+				<1 2 3 4 5 6 6 6 6 6>;
 
-				qcom,cpr-voltage-ceiling =
-					<595000  645000  725000  790000
-					 870000  925000 1070000>;
-				qcom,cpr-voltage-floor =
-					<534000  524000  596000  652000
-					 712000  744000 1070000>;
+			qcom,cpr-voltage-ceiling =
+				<595000  645000  690000  725000  758000
+				 790000  830000  870000  925000 1070000>;
 
-				qcom,mem-acc-voltage = <1 1 1 2 2 2 2>;
-				qcom,system-voltage =
-					<RPM_SMD_REGULATOR_LEVEL_LOW_SVS>,
-					<RPM_SMD_REGULATOR_LEVEL_LOW_SVS>,
-					<RPM_SMD_REGULATOR_LEVEL_SVS>,
-					<RPM_SMD_REGULATOR_LEVEL_SVS_PLUS>,
-					<RPM_SMD_REGULATOR_LEVEL_NOM>,
-					<RPM_SMD_REGULATOR_LEVEL_NOM_PLUS>,
-					<RPM_SMD_REGULATOR_LEVEL_TURBO>;
+			qcom,cpr-voltage-floor =
+				<534000  524000  560000  596000  624000
+				 652000  682000  712000  744000 1070000>;
 
-				qcom,corner-frequencies =
-					<160000000 266000000 370000000
-					 465000000 600000000 750000000
-					 850000000>;
+			qcom,mem-acc-voltage =
+				<1 1 1 2 2 2 2 2 2 2>;
 
-				qcom,cpr-target-quotients =
-					<0    0    0    0     0    0  174  167
-					294  292  303  313    0    0    0    0>,
-					<0    0    0    0     0    0  263  247
-					413  397  415  412    0    0    0    0>,
-					<0    0    0    0     0    0  375  354
-					554  519  573  554    0    0    0    0>,
-					<0    0    0    0     0    0  412  380
-					597  562  612  591    0    0    0    0>,
-					<0    0    0    0     0    0  513  476
-					722  680  738  718    0    0    0    0>,
-					<0    0    0    0     0    0  595  553
-					811  768  837  811    0    0    0    0>,
-					<0    0    0    0     0    0    0    0
-					 0    0    0    0     0    0    0    0>;
+			qcom,system-voltage =
+				<RPM_SMD_REGULATOR_LEVEL_LOW_SVS>,
+				<RPM_SMD_REGULATOR_LEVEL_LOW_SVS>,
+				<RPM_SMD_REGULATOR_LEVEL_SVS>,
+				<RPM_SMD_REGULATOR_LEVEL_SVS>,
+				<RPM_SMD_REGULATOR_LEVEL_SVS_PLUS>,
+				<RPM_SMD_REGULATOR_LEVEL_SVS_PLUS>,
+				<RPM_SMD_REGULATOR_LEVEL_NOM>,
+				<RPM_SMD_REGULATOR_LEVEL_NOM>,
+				<RPM_SMD_REGULATOR_LEVEL_NOM_PLUS>,
+				<RPM_SMD_REGULATOR_LEVEL_TURBO>;
 
-				qcom,cpr-ro-scaling-factor =
-					<  0    0    0    0   0    0 1790 1760
-					1990 1900 2140 2020   0    0    0    0>,
-					<  0    0    0    0   0    0 1790 1760
-					1990 1900 2140 2020   0    0    0    0>,
-					<  0    0    0    0   0    0 1790 1760
-					1990 1900 2140 2020   0    0    0    0>,
-					<  0    0    0    0   0    0 1790 1760
-					1990 1900 2140 2020   0    0    0    0>,
-					<  0    0    0    0   0    0 1790 1760
-					1990 1900 2140 2020   0    0    0    0>,
-					<  0    0    0    0   0    0 1790 1760
-					1990 1900 2140 2020   0    0    0    0>,
-					<  0    0    0    0   0    0 1790 1760
-					1990 1900 2140 2020   0    0    0    0>;
+			qcom,corner-frequencies =
+				<160000000 266000000 318000000 370000000 418000000
+				 465000000 526000000 600000000 647000000 750000000>;
 
-				qcom,cpr-scaled-open-loop-voltage-as-ceiling;
-				qcom,cpr-corner-allow-ldo-mode =
-					<0 0 0 0 0 0 0>;
-				qcom,cpr-corner-allow-closed-loop =
-					<0 0 0 0 0 0 0>;
+			qcom,cpr-target-quotients =
+				<0    0    0    0     0    0  174  167
+				294  292  303  313    0    0    0    0>,
+				<0    0    0    0     0    0  263  247
+				413  397  415  412    0    0    0    0>,
+				<0    0    0    0     0    0  319  299
+				484  458  494  483    0    0    0    0>,
+				<0    0    0    0     0    0  375  354
+				554  519  573  554    0    0    0    0>,
+				<0    0    0    0     0    0  393  367
+				576  540  592  572    0    0    0    0>,
+				<0    0    0    0     0    0  412  380
+				597  562  612  591    0    0    0    0>,
+				<0    0    0    0     0    0  462  428
+				660  621  675  654    0    0    0    0>,
+				<0    0    0    0     0    0  513  476
+				722  680  738  718    0    0    0    0>,
+				<0    0    0    0     0    0  554  514
+				767  724  788  764    0    0    0    0>,
+				<0    0    0    0     0    0    0    0
+				 0    0    0    0     0    0    0    0>;
+
+			qcom,cpr-ro-scaling-factor =
+				<  0    0    0    0   0    0 1790 1760
+				1990 1900 2140 2020   0    0    0    0>,
+				<  0    0    0    0   0    0 1790 1760
+				1990 1900 2140 2020   0    0    0    0>,
+				<  0    0    0    0   0    0 1790 1760
+				1990 1900 2140 2020   0    0    0    0>,
+				<  0    0    0    0   0    0 1790 1760
+				1990 1900 2140 2020   0    0    0    0>,
+				<  0    0    0    0   0    0 1790 1760
+				1990 1900 2140 2020   0    0    0    0>,
+				<  0    0    0    0   0    0 1790 1760
+				1990 1900 2140 2020   0    0    0    0>,
+				<  0    0    0    0   0    0 1790 1760
+				1990 1900 2140 2020   0    0    0    0>,
+				<  0    0    0    0   0    0 1790 1760
+				1990 1900 2140 2020   0    0    0    0>,
+				<  0    0    0    0   0    0 1790 1760
+				1990 1900 2140 2020   0    0    0    0>,
+				<  0    0    0    0   0    0 1790 1760
+				1990 1900 2140 2020   0    0    0    0>;
+
+			qcom,cpr-scaled-open-loop-voltage-as-ceiling;
+			qcom,cpr-corner-allow-ldo-mode =
+				<0 0 0 0 0 0 0 0 0 0>;
+			qcom,cpr-corner-allow-closed-loop =
+				<0 0 0 0 0 0 0 0 0 0>;
 			};
 		};
 	};
