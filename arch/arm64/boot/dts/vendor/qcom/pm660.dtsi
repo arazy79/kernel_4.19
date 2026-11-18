@@ -148,6 +148,8 @@
 				qcom,ratiometric;
 				qcom,hw-settle-time = <200>;
 				qcom,pre-scaling = <1 1>;
+				qcom,lut-index = <4>;
+				status = "okay";
 			};
 
 			msm_therm{
@@ -166,8 +168,6 @@
 				qcom,ratiometric;
 				qcom,hw-settle-time = <200>;
 				qcom,pre-scaling = <1 1>;
-				qcom,lut-index = <4>;
-				status = "okay";
 			};
 
 			emmc_therm{
