@@ -597,7 +597,7 @@ static int fg_get_jeita_threshold(struct fg_dev *fg,
 	return 0;
 }
 
-static int fg_temp_offset = -30;
+static int fg_temp_offset = 0;
 module_param(fg_temp_offset, int, 0644);
 MODULE_PARM_DESC(fg_temp_offset, "Battery temp calibration offset in deciDegC (0=off, -50=-5C)");
 
