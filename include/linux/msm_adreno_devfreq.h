@@ -41,6 +41,8 @@ struct devfreq_msm_adreno_tz_data {
 		s64 busy_time;
 		u32 ctxt_aware_target_pwrlevel;
 		u32 ctxt_aware_busy_penalty;
+		u32 last_level;
+		u32 cycles_keeping_level;
 	} bin;
 	struct {
 		u64 total_time;
