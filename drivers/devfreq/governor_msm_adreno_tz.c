@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2010-2020, The Linux Foundation. All rights reserved.
+ *
+ * CHERRY-PICKED: adrenoboost (low/medium/high) + hysteresis conservation,
+ * di-port dari versi boost ke base stock (no_boost).
+ *
+ * WAJIB dibaca sebelum compile:
+ *   Tambahkan 2 field ini ke struct msm_adreno_tz_bin di
+ *   include/linux/msm_adreno_devfreq.h (di dalam struct devfreq_msm_adreno_tz_data):
+ *       unsigned int last_level;
+ *       unsigned int cycles_keeping_level;
+ *   (tipe int juga boleh, asal konsisten; unsigned untuk hindari nilai negatif.)
+ *
+ * Tidak di-include (fitur terpisah dari file boost, bisa ditambah manual jika perlu):
+ *   - #include <linux/state_notifier.h> + force min-freq saat suspend/screen-off
+ *     (variabel `suspended` + `state_suspended`)
+ *   - extern int refresh_rate_cus; + scaling busy_time di >60Hz
+ *   - #ifdef CONFIG_ADRENO_IDLER / CONFIG_SIMPLE_GPU_ALGORITHM hooks
+ *
+ * Optimasi yang diterapkan (behavior identik dengan versi boost asli):
+ *   1. Lookup tabel faktor boost branchless (boost_factors[4]) — ganti if-else chain.
+ *   2. Semua tuning table di-mark const (rodata, lebih cache-friendly).
+ *   3. Overflow guard busy/total_time >>=7 (dari versi boost, mencegah wrap).
+ *   4. last_level disinkronkan saat idle/non-governor drop (hindari indexing stale).
  */
 #include <linux/errno.h>
 #include <linux/module.h>
@@ -52,6 +74,13 @@ static DEFINE_SPINLOCK(suspend_lock);
 
 #define TAG "msm_adreno_tz: "
 
+/*
+ * adrenoboost: 0 = off, 1 = low, 2 = medium, 3 = high
+ * default 2 (medium). Ubah ke 0 kalau mau off-by-default (kontrol via sysfs),
+ * atau ke 3 untuk high by default.
+ */
+static unsigned int adrenoboost = 2;
+
 static u64 suspend_time;
 static u64 suspend_start;
 static unsigned long acc_total, acc_relative_busy;
@@ -82,6 +111,30 @@ u64 suspend_time_ms(void)
 	return time_diff;
 }
 
+static ssize_t adrenoboost_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", adrenoboost);
+}
+
+static ssize_t adrenoboost_save(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int input;
+
+	if (sscanf(buf, "%d ", &input) != 1)
+		return -EINVAL;
+
+	if (input < 0)
+		adrenoboost = 0;
+	else if (input > 3)
+		adrenoboost = 3;
+	else
+		adrenoboost = input;
+
+	return count;
+}
+
 static ssize_t gpu_load_show(struct device *dev,
 		struct device_attribute *attr,
 		char *buf)
@@ -108,8 +161,8 @@ static ssize_t gpu_load_show(struct device *dev,
  * since last time the entry is read.
  */
 static ssize_t suspend_time_show(struct device *dev,
-	struct device_attribute *attr,
-	char *buf)
+		struct device_attribute *attr,
+		char *buf)
 {
 	u64 time_diff = 0;
 
@@ -128,6 +181,8 @@ static ssize_t suspend_time_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%llu\n", time_diff);
 }
 
+static DEVICE_ATTR(adrenoboost, 0644,
+		adrenoboost_show, adrenoboost_save);
 static DEVICE_ATTR_RO(gpu_load);
 
 static DEVICE_ATTR_RO(suspend_time);
@@ -135,6 +190,7 @@ static DEVICE_ATTR_RO(suspend_time);
 static const struct device_attribute *adreno_tz_attr_list[] = {
 		&dev_attr_gpu_load,
 		&dev_attr_suspend_time,
+		&dev_attr_adrenoboost,
 		NULL
 };
 
@@ -174,7 +230,7 @@ static int __secure_tz_reset_entry2(unsigned int *scm_data, u32 size_scm_data,
 		};
 		spin_lock(&tz_lock);
 		ret = scm_call2_atomic(SCM_SIP_FNID(SCM_SVC_IO, TZ_RESET_ID),
-			&desc);
+				&desc);
 		spin_unlock(&tz_lock);
 	} else {
 		struct scm_desc desc = {0};
@@ -202,7 +258,7 @@ static int __secure_tz_update_entry3(unsigned int *scm_data, u32 size_scm_data,
 		};
 		spin_lock(&tz_lock);
 		ret = scm_call2_atomic(SCM_SIP_FNID(SCM_SVC_IO, TZ_UPDATE_ID),
-			&desc);
+				&desc);
 		spin_unlock(&tz_lock);
 		*val = ret;
 	} else {
@@ -362,6 +418,56 @@ static inline int devfreq_get_freq_level(struct devfreq *devfreq,
 	return -EINVAL;
 }
 
+/*
+ * adrenoboost tuning tables (10 elemen, index = GPU level, 0 = frek tertinggi).
+ * conservation_map_up/down: jumlah cycle minimal sebelum izinin naik/turun frek.
+ * lvl_multiplicator/divider: faktor skala busy_time per level.
+ * Dibuat const agar masuk rodata (bisa di-cache lebih baik, tidak ada relokasi).
+ */
+static const int conservation_map_up[]   = {5, 5, 4, 3, 3, 4, 5, 3, 3, 3};
+static const int conservation_map_down[] = {4, 3, 4, 4, 3, 3, 3, 3, 3, 3};
+
+static const int lvl_multiplicator_map_1[] = {5, 5, 6, 8, 9, 1, 1, 1, 1, 1};
+static const int lvl_divider_map_1[]       = {10,10,10,10,10,1, 1, 1, 1, 1};
+static const int lvl_multiplicator_map_2[] = {9, 1, 1, 1, 1, 10,8, 1, 1, 1};
+static const int lvl_divider_map_2[]       = {10,1, 1, 1, 1, 14,12,1, 1, 1};
+static const int lvl_multiplicator_map_3[] = {10,1, 1, 1, 1, 11,9, 1, 1, 1};
+static const int lvl_divider_map_3[]       = {10,1, 1, 1, 1, 15,13,1, 1, 1};
+
+#define BOOST_MAX_LEVEL_IDX	((int)ARRAY_SIZE(lvl_multiplicator_map_1) - 1)
+
+static inline int boost_clamp_level(int lvl)
+{
+	if (lvl < 0)
+		return 0;
+	if (lvl > BOOST_MAX_LEVEL_IDX)
+		return BOOST_MAX_LEVEL_IDX;
+	return lvl;
+}
+
+/*
+ * Optimasi: tabel lookup faktor boost (branchless).
+ * Rasio TETAP identik dengan versi boost asli (4.19):
+ *   low    = busy * 2 * mult1[lvl]             / (div1[lvl] * 1)
+ *   medium = busy * 3 * mult2[lvl] * 7         / (div2[lvl] * 10)
+ *   high   = busy * 4 * mult3[lvl] * 8         / (div3[lvl] * 10)
+ * adrenoboost sudah di-clamp 0..3 oleh sysfs store, index aman.
+ */
+struct boost_factor {
+	unsigned int base;       /* pengali dasar: 2 / 3 / 4 */
+	unsigned int extra_num;  /* pengali tambahan: 1 / 7 / 8 */
+	unsigned int extra_den;  /* pembagi tambahan: 1 / 10 / 10 */
+	const int *mult;         /* -> lvl_multiplicator_map_N */
+	const int *div;          /* -> lvl_divider_map_N */
+};
+
+static const struct boost_factor boost_factors[4] = {
+	{ 0, 0, 0, NULL, NULL },					/* off (tidak dipakai) */
+	{ 2, 1, 1,  lvl_multiplicator_map_1, lvl_divider_map_1 },	/* low */
+	{ 3, 7, 10, lvl_multiplicator_map_2, lvl_divider_map_2 },	/* medium */
+	{ 4, 8, 10, lvl_multiplicator_map_3, lvl_divider_map_3 },	/* high */
+};
+
 static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 {
 	int result = 0;
@@ -370,6 +476,7 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 	int val, level = 0;
 	unsigned int scm_data[4];
 	int context_count = 0;
+	int last_level = boost_clamp_level(priv->bin.last_level);
 
 	/* keeps stats.private_data == NULL   */
 	result = devfreq_update_stats(devfreq);
@@ -378,9 +485,30 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 		return result;
 	}
 
+	/* Prevent overflow */
+	if (stats->busy_time >= (1 << 24) || stats->total_time >= (1 << 24)) {
+		stats->busy_time >>= 7;
+		stats->total_time >>= 7;
+	}
+
 	*freq = stats->current_frequency;
+
 	priv->bin.total_time += stats->total_time;
-	priv->bin.busy_time += stats->busy_time;
+
+	/*
+	 * Scale busy time up based on adrenoboost parameter.
+	 * Pakai u64 intermediate biar aman overflow. Lookup branchless.
+	 */
+	if (adrenoboost) {
+		const struct boost_factor *f =
+			&boost_factors[adrenoboost > 3 ? 3 : adrenoboost];
+		u64 scaled = (u64)stats->busy_time * f->base
+				* f->mult[last_level] * f->extra_num
+				/ ((u64)f->div[last_level] * f->extra_den);
+		priv->bin.busy_time += (unsigned int)scaled;
+	} else {
+		priv->bin.busy_time += stats->busy_time;
+	}
 
 	if (stats->private_data)
 		context_count =  *((int *)stats->private_data);
@@ -405,6 +533,13 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 		return level;
 	}
 
+	/* idle freq or any non governor drop should move last_level as well */
+	if (level != (int)priv->bin.last_level)
+		priv->bin.last_level = level;
+
+	/* pakai level aktual (sudah di-clamp) untuk indexing conservation map */
+	last_level = boost_clamp_level(level);
+
 	/*
 	 * If there is an extended block of busy processing,
 	 * increase frequency.  Otherwise run the normal algorithm.
@@ -421,18 +556,48 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 		__secure_tz_update_entry3(scm_data, sizeof(scm_data),
 					&val, sizeof(val), priv);
 	}
-	priv->bin.total_time = 0;
-	priv->bin.busy_time = 0;
 
 	/*
 	 * If the decision is to move to a different level, make sure the GPU
 	 * frequency changes.
+	 *
+	 * adrenoboost ON: pakai hysteresis conservation_map (tahan N cycle
+	 * sebelum benar-benar naik/turun, anti-jitter). Counter di-reset saat
+	 * TZ tidak mau ubah level (val==0) biar tidak stale.
 	 */
-	if (val) {
+	if (!adrenoboost && val) {
 		level += val;
 		level = max(level, 0);
 		level = min_t(int, level, devfreq->profile->max_state - 1);
+		priv->bin.last_level = level;
+	} else if (adrenoboost) {
+		if (val) {
+			priv->bin.cycles_keeping_level += 1 + abs(val / 2);
+
+			if (val < 0 && priv->bin.cycles_keeping_level <
+					conservation_map_up[last_level]) {
+				/* tahan dulu, belum cukup cycle naik frek */
+			} else if (val > 0 && priv->bin.cycles_keeping_level <
+					conservation_map_down[last_level]) {
+				/* tahan dulu, belum cukup cycle turun frek */
+			} else {
+				level += val;
+				level = max(level, 0);
+				level = min_t(int, level,
+						devfreq->profile->max_state - 1);
+				/* reset keep cycles timer */
+				priv->bin.cycles_keeping_level = 0;
+				/* set new last level */
+				priv->bin.last_level = level;
+			}
+		} else {
+			/* TZ gak mau ubah level -> reset counter biar gak stale */
+			priv->bin.cycles_keeping_level = 0;
+		}
 	}
+
+	priv->bin.total_time = 0;
+	priv->bin.busy_time = 0;
 
 	*freq = devfreq->profile->freq_table[level];
 	return 0;
@@ -489,6 +654,12 @@ static int tz_start(struct devfreq *devfreq)
 	partner_gpu_profile = gpu_profile;
 
 	priv = devfreq->data;
+
+	/* Init state adrenoboost biar gak baca nilai sampah */
+	priv->bin.cycles_keeping_level = 0;
+	priv->bin.last_level = devfreq->profile->max_state - 1;
+	priv->bin.last_level = boost_clamp_level(priv->bin.last_level);
+
 	priv->nb.notifier_call = tz_notify;
 
 	out = 1;
@@ -552,6 +723,7 @@ static int tz_suspend(struct devfreq *devfreq)
 
 	priv->bin.total_time = 0;
 	priv->bin.busy_time = 0;
+	priv->bin.cycles_keeping_level = 0;
 	return 0;
 }
 
