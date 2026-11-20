@@ -1,6 +1,12 @@
 name: Check Config
 on:
-  workflow_dispatch:  # Jalankan manual dari browser
+  workflow_dispatch:
+    inputs:
+      defconfig_name:
+        description: 'Nama file defconfig (tanpa .path)'
+        required: true
+        default: 'sdm660_perf_defconfig'
+        type: string
 
 jobs:
   check:
@@ -14,21 +20,29 @@ jobs:
           sudo apt update
           sudo apt install -y make gcc bc bison flex libssl-dev
 
-      - name: Generate defconfig
+      - name: Lihat daftar defconfig yang tersedia
         run: |
-          make ARCH=arm64 your_defconfig_name_here  # Ganti nama defconfig kamu
+          echo "=== File defconfig di repo kamu ==="
+          find arch/arm64/configs -name "*_defconfig" | sort
 
-      - name: Run make olddefconfig & show result
+      - name: Generate .config dari defconfig
         run: |
-          echo "=== Sebelum olddefconfig ==="
-          grep -n "CONFIG_KALLSYMS" .config || true
+          echo "Pakai defconfig: ${{ github.event.inputs.defconfig_name }}"
+          make ARCH=arm64 ${{ github.event.inputs.defconfig_name }}
 
+      - name: Cek KALLSYMS sebelum & sesudah olddefconfig
+        run: |
+          echo "=== 1. SEBELUM make olddefconfig ==="
+          grep "CONFIG_KALLSYMS" .config || echo "Tidak ada di .config"
+
+          echo ""
+          echo "=== 2. Jalankan make olddefconfig ==="
           make ARCH=arm64 olddefconfig
 
           echo ""
-          echo "=== Sesudah olddefconfig ==="
-          grep -n "CONFIG_KALLSYMS" .config || true
+          echo "=== 3. SESUDAH make olddefconfig ==="
+          grep "CONFIG_KALLSYMS" .config || echo "Tidak ada di .config"
 
           echo ""
-          echo "=== Siapa yang menarik KALLSYMS? ==="
-          grep -rn "select KALLSYMS" --include="Kconfig*" . || true
+          echo "=== 4. Siapa yang memaksa KALLSYMS = y? ==="
+          grep -rn "select KALLSYMS" --include="Kconfig*" . || echo "Tidak ada yang select KALLSYMS"
