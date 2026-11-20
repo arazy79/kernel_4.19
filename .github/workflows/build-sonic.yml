@@ -8,7 +8,7 @@ on:
         default: 'arazy79/kernel_4.19'
       branch:
         required: true
-        default: 'a16-sonic'
+        default: 'sonic-limit-tes-bek'
       defconfig:
         required: true
         default: 'X00TD_defconfig'
@@ -28,7 +28,6 @@ on:
 
 jobs:
   build:
-    # Dikunci ke 24.04 biar build stabil & ga kena roll-out ubuntu-latest ke 26.04
     runs-on: ubuntu-24.04
     env:
       TZ: Asia/Jakarta
@@ -388,6 +387,26 @@ jobs:
             echo "OK: Fixed fingerprint_common.c"
           fi
 
+      # =========================================================================
+      # 🔥 TAMBAHAN BARU: PATCH UNAME (FORCE CUSTOM COMPILER STRING)
+      # =========================================================================
+      - name: Patch uname string (Force Custom)
+        working-directory: kernel
+        run: |
+          set -e
+          # 1. Paksa isi CC_VERSION dengan string buatan kita (contoh pakai git f42c87)
+          # Ini akan menimpa string clang bawaan toolchain
+          sed -i 's/^CC_VERSION=.*/CC_VERSION="Neutron clang version 26.0.0git (git f42c87ba2c70219b1f4ad1f031a5b6a1ea6603fb)"/' scripts/mkcompile_h
+          
+          # 2. Kosongkan LD_VERSION biar LLD ga muncul
+          sed -i 's/^LD_VERSION=.*/LD_VERSION=""/' scripts/mkcompile_h
+          
+          # 3. Hapus pemisah koma dan $LD_VERSION dari perintah printf di mkcompile_h
+          sed -i 's/, \$LD_VERSION//g' scripts/mkcompile_h
+          sed -i 's/\$CC_VERSION, \$LD_VERSION/\$CC_VERSION/g' scripts/mkcompile_h
+          
+          echo "OK: Uname string dipaksa custom!"
+
       - name: Select toolchain
         id: tc
         env:
@@ -421,7 +440,6 @@ jobs:
         run: |
           sudo apt-get update
 
-          # Helper: coba nama paket satu per satu, ambil yang tersedia
           apt_pick() {
             for p in "$@"; do
               if apt-cache show "$p" >/dev/null 2>&1; then
@@ -433,18 +451,14 @@ jobs:
             echo "::warning::Tidak ada paket cocok dari: $* (lanjut)"
           }
 
-          # Paket dasar (TANPA gcc-multilib / g++-multilib agar tidak konflik)
           sudo apt-get install -y \
             bc bison build-essential ccache curl flex \
             git gnupg gperf imagemagick libncurses-dev lib32readline-dev lib32z1-dev \
             libssl-dev libxml2-utils lzop pngcrush rsync schedtool squashfs-tools \
             xsltproc zip zlib1g-dev clang llvm lld zstd wget xz-utils
 
-          # Toolchain cross-compile: coba nama generik dulu, fallback ke versi 12
           apt_pick gcc-aarch64-linux-gnu gcc-12-aarch64-linux-gnu
           apt_pick gcc-arm-linux-gnueabi gcc-12-arm-linux-gnueabi
-
-          # Paket lz4: nama berubah antar versi Ubuntu
           apt_pick lz4 liblz4-tool
 
       - name: Fetch toolchain
@@ -524,13 +538,8 @@ jobs:
             } >> out/.config
           fi
           
-          # Jalankan oldconfig dulu
           yes "" | make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS oldconfig
-          
-          # PAKSA MATIIN KALLSYMS_ALL PAKE SCRIPT RESMI KERNEL
           ./scripts/config --file out/.config -d KALLSYMS_ALL
-          
-          # Jalanin oldconfig sekali lagi biar perubahannya sinkron
           yes "" | make ARCH=${{ env.ARCH }} O=out $TC_MAKE_ARGS oldconfig
           
           if [ "$ENABLE_KSU" = "true" ]; then
@@ -540,7 +549,6 @@ jobs:
             grep -E '^CONFIG_KSU' out/.config
           fi
           
-          # Cek apakah beneran mati
           if grep -q '^CONFIG_KALLSYMS_ALL=y' out/.config; then
             echo "::warning::GAGAL matiin KALLSYMS_ALL, tapi build tetep lanjut karena simbol udah di-export manual"
           else
@@ -551,6 +559,17 @@ jobs:
         working-directory: kernel
         env:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
+          # =========================================================================
+          # 🔥 TAMBAHAN BARU: FORCE USER, HOST, DAN TANGGAL
+          # =========================================================================
+          # Ganti nilai di bawah ini sesuai selera (misal: deepseek@ai)
+          KBUILD_BUILD_USER: "android79"
+          KBUILD_BUILD_HOST: "@google.co.id"
+          
+          # Ganti tanggal. Formatnya harus valid untuk perintah `date -d`.
+          # Kalau mau pakai tanggal sekarang, hapus saja dua baris di bawah ini (kasih tanda #)
+          KBUILD_BUILD_TIMESTAMP: "Wed Oct 30 00:00:00 WIB 1979"
+          KBUILD_BUILD_VERSION: "1"  # Ini yang mengatur angka #66
         run: |
           echo "CPU cores: $(nproc)"
           if [ "$TOOLCHAIN" != "gcc" ]; then
@@ -588,16 +607,9 @@ jobs:
         id: artifact_name
         shell: bash
         run: |
-          # Ambil nama workflow dari environment variable
           RAW_NAME="${{ github.workflow }}"
-          
-          # Ganti spasi dengan tanda hubung (-)
           CLEAN_NAME=$(echo "$RAW_NAME" | tr ' ' '-')
-          
-          # Opsional: buang karakter kurung dan plus agar lebih rapi
           CLEAN_NAME=$(echo "$CLEAN_NAME" | sed 's/[()+]//g')
-          
-          # Simpan ke output step
           echo "clean_name=$CLEAN_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Upload Image.gz-dtb
