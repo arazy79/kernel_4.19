@@ -2,10 +2,22 @@ name: Check Config
 on:
   workflow_dispatch:
     inputs:
+      source_repo:
+        description: 'repo'
+        required: true
+        default: 'arazy79/kernel_4.19'
+      source_branch:
+        description: 'Branch'
+        required: true
+        default: 'sonic-limit-tes-bek'
+      target_branch:
+        description: 'Branch basis di repo ini'
+        required: true
+        default: 'lineage-23.2'
       defconfig_name:
         description: 'Nama file defconfig (tanpa .path)'
         required: true
-        default: 'sdm660_perf_defconfig'
+        default: 'configs/vendor/asus'
         type: string
 
 jobs:
