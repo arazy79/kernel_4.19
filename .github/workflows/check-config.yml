@@ -6,18 +6,14 @@ on:
         description: 'repo'
         required: true
         default: 'arazy79/kernel_4.19'
-      source_branch:
+      branch:
         description: 'Branch'
         required: true
         default: 'sonic-limit-tes-bek'
-      target_branch:
-        description: 'Branch basis di repo ini'
-        required: true
-        default: 'lineage-23.2'
       defconfig_name:
         description: 'Nama file defconfig (tanpa .path)'
         required: true
-        default: 'configs/vendor/asus'
+        default: 'X00TD_defconfig'
         type: string
 
 jobs:
