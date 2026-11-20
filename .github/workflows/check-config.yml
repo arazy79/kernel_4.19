@@ -11,9 +11,9 @@ on:
         required: true
         default: 'sonic-limit-tes-bek'
       defconfig_name:
-        description: 'Nama file defconfig (tanpa .path)'
+        description: 'Nama file defconfig (contoh: vendor/asus/X00TD_defconfig)'
         required: true
-        default: 'X00TD_defconfig'
+        default: 'vendor/asus/X00TD_defconfig'
         type: string
 
 jobs:
