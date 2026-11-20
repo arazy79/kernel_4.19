@@ -1,0 +1,34 @@
+name: Check Config
+on:
+  workflow_dispatch:  # Jalankan manual dari browser
+
+jobs:
+  check:
+    name: Run make olddefconfig
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt update
+          sudo apt install -y make gcc bc bison flex libssl-dev
+
+      - name: Generate defconfig
+        run: |
+          make ARCH=arm64 your_defconfig_name_here  # Ganti nama defconfig kamu
+
+      - name: Run make olddefconfig & show result
+        run: |
+          echo "=== Sebelum olddefconfig ==="
+          grep -n "CONFIG_KALLSYMS" .config || true
+
+          make ARCH=arm64 olddefconfig
+
+          echo ""
+          echo "=== Sesudah olddefconfig ==="
+          grep -n "CONFIG_KALLSYMS" .config || true
+
+          echo ""
+          echo "=== Siapa yang menarik KALLSYMS? ==="
+          grep -rn "select KALLSYMS" --include="Kconfig*" . || true
