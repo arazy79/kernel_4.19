@@ -224,7 +224,7 @@
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 end */
 			qcom,fv-max-uv = <4350000>;
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 start */
-			qcom,usb-icl-ua = <2500000>;
+			qcom,usb-icl-ua = <2750000>;
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 end */
 			qcom,float-option = <1>;
 /* Huaqin modify for ZQL1650 by fangaijun  at 2018/02/2 end */
@@ -446,7 +446,7 @@
 /* Huaqin modify for ZQL1650 by fangaijun  at 2018/02/2 end */
 /* Huaqin modify for ZQL1650 recharge SOC and voltage by fangaijun at 2018/02/2 start */
 			qcom,fg-recharge-voltage = <4150>;
-			qcom,fg-recharge-soc-thr = <80>;
+			qcom,fg-recharge-soc-thr = <60>;
 			qcom,fg-auto-recharge-soc;
 /* Huaqin modify for ZQL1650 recharge SOC and voltage by fangaijun at 2018/02/2 end */
 //Huaqin added by tangqingyong at 20180226 for fg use external start
