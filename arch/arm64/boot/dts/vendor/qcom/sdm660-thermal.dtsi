@@ -130,7 +130,7 @@
 		trips {
 			active-config0 {
 				temperature = <125000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "passive";
 			};
 		};
@@ -145,7 +145,7 @@
 		trips {
 			active-config0 {
 				temperature = <125000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "passive";
 			};
 		};
@@ -160,7 +160,7 @@
 		trips {
 			active-config0 {
 				temperature = <125000>;
-				hysteresis = <1000>;
+				hysteresis = <2000>;
 				type = "passive";
 			};
 		};
@@ -598,7 +598,7 @@
 	};
 
 	gpu-step {
-		polling-delay-passive = <10>;
+		polling-delay-passive = <20>;
 		polling-delay = <0>;
 		thermal-governor = "step_wise";
 		thermal-sensors = <&tsens 8>;
@@ -606,7 +606,7 @@
 		trips {
 			gpu_trip: gpu-trip {
 				temperature = <97000>;
-				hysteresis = <0>;
+				hysteresis = <2000>;
 				type = "passive";
 			};
 		};
@@ -630,13 +630,13 @@
 		trips {
 			gold_trip: gold-trip {
 				temperature = <53000>;
-				hysteresis = <0>;
+				hysteresis = <2000>;
 				type = "passive";
 			};
 
 			silver_trip: silver-trip {
 				temperature = <55000>;
-				hysteresis = <0>;
+				hysteresis = <2000>;
 				type = "passive";
 			};
 		};
@@ -790,8 +790,8 @@
 		tracks-low;
 		trips {
 			mpm_trip: mpm-trip {
-				temperature = <5000>;
-				hysteresis = <5000>;
+				temperature = <35000>;
+				hysteresis = <2000>;
 				type = "passive";
 			};
 		};
