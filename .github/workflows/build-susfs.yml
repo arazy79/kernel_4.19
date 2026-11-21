@@ -8,7 +8,7 @@ on:
         default: 'arazy79/kernel_4.19'
       branch:
         required: true
-        default: 'sonic-limit-tes-bek'
+        default: 'sonic-asli'
       defconfig:
         required: true
         default: 'X00TD_defconfig'
