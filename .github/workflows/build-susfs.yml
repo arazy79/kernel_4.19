@@ -72,7 +72,7 @@ jobs:
           done
           echo "OK: JackA1ltman hooks terpasang"
 
-- name: Apply SuSFS kernel patch
+      - name: Apply SuSFS kernel patch
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
         run: |
