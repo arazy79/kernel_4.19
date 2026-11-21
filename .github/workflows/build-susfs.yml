@@ -77,7 +77,7 @@ jobs:
         working-directory: kernel
         run: |
           set -e
-          PATCH_FILE="../.github/susfs_x00td_419.patch"
+          PATCH_FILE="../patches/susfs_x00td_419.patch"
           [ -f "$PATCH_FILE" ] || { echo "::error::$PATCH_FILE tidak ada"; ls -la ../.github/; exit 1; }
           patch -p1 --forward --no-backup-if-mismatch < "$PATCH_FILE" || true
           if find . -name "*.rej" | grep -q .; then
