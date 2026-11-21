@@ -42,6 +42,17 @@ jobs:
           path: kernel
           submodules: recursive
 
+      - name: Checkout CI files (patch dari branch workflow)
+        if: ${{ github.event.inputs.enable_ksu == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.ref }}
+          path: _ci
+          sparse-checkout: |
+            .github/susfs_x00td_419.patch
+          sparse-checkout-cone-mode: false
+
       - name: Setup BakaSU
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         id: ksu
@@ -77,8 +88,8 @@ jobs:
         working-directory: kernel
         run: |
           set -e
-          PATCH_FILE="$GITHUB_WORKSPACE/.github/susfs_x00td_419.patch"
-          [ -f "$PATCH_FILE" ] || { echo "::error::$PATCH_FILE tidak ada"; ls -la "$GITHUB_WORKSPACE/.github/"; exit 1; }
+          PATCH_FILE="$GITHUB_WORKSPACE/_ci/.github/susfs_x00td_419.patch"
+          [ -f "$PATCH_FILE" ] || { echo "::error::$PATCH_FILE tidak ada"; ls -laR "$GITHUB_WORKSPACE/_ci/" || true; exit 1; }
           patch -p1 --forward --no-backup-if-mismatch < "$PATCH_FILE" || true
           if find . -name "*.rej" | grep -q .; then
             echo "::warning::hunk gagal:"; find . -name "*.rej"
