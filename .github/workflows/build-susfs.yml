@@ -77,8 +77,8 @@ jobs:
         working-directory: kernel
         run: |
           set -e
-          PATCH_FILE="../patches/susfs_x00td_419.patch"
-          [ -f "$PATCH_FILE" ] || { echo "::error::$PATCH_FILE tidak ada"; ls -la ../.github/; exit 1; }
+          PATCH_FILE="$GITHUB_WORKSPACE/.github/susfs_x00td_419.patch"
+          [ -f "$PATCH_FILE" ] || { echo "::error::$PATCH_FILE tidak ada"; ls -la "$GITHUB_WORKSPACE/.github/"; exit 1; }
           patch -p1 --forward --no-backup-if-mismatch < "$PATCH_FILE" || true
           if find . -name "*.rej" | grep -q .; then
             echo "::warning::hunk gagal:"; find . -name "*.rej"
