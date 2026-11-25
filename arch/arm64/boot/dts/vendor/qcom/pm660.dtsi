@@ -166,6 +166,8 @@
 				qcom,ratiometric;
 				qcom,hw-settle-time = <200>;
 				qcom,pre-scaling = <1 1>;
+				qcom,lut-index = <4>;
+				status = "okay";
 			};
 
 			emmc_therm{
@@ -182,6 +184,8 @@
 				qcom,ratiometric;
 				qcom,hw-settle-time = <200>;
 				qcom,pre-scaling = <1 1>;
+				qcom,lut-index = <4>;
+				status = "okay";
 			};
 
 			drax_temp{
@@ -212,19 +216,19 @@
 
 /* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 start */
 			qcom,thermal-mitigation
-					= <3000000 3000000 2800000 2600000
-						2400000 2100000>;
+					= <3000000 2500000 2000000 1500000
+						1000000 500000>;
 /* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 end */
 			// Added by huqinmin remove Type-C for micro-usb 2018/1/31 begin
 			qcom,use-extcon;
 			// Added by huqinmin remove Type-C for micro-usb 2018/1/31 end
 /* Huaqin modify for ZQL1650 by fangaijun  at 2018/02/2 start */
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 start */
-			qcom,fcc-max-ua = <3000000>;
+			qcom,fcc-max-ua = <2000000>;
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 end */
 			qcom,fv-max-uv = <4350000>;
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 start */
-			qcom,usb-icl-ua = <2750000>;
+			qcom,usb-icl-ua = <2000000>;
 /* Huaqin modify for ZQL1650-70 optimize Adapter ID by fangaijun at 2018/02/9 end */
 			qcom,float-option = <1>;
 /* Huaqin modify for ZQL1650 by fangaijun  at 2018/02/2 end */
@@ -446,7 +450,7 @@
 /* Huaqin modify for ZQL1650 by fangaijun  at 2018/02/2 end */
 /* Huaqin modify for ZQL1650 recharge SOC and voltage by fangaijun at 2018/02/2 start */
 			qcom,fg-recharge-voltage = <4150>;
-			qcom,fg-recharge-soc-thr = <60>;
+			qcom,fg-recharge-soc-thr = <80>;
 			qcom,fg-auto-recharge-soc;
 /* Huaqin modify for ZQL1650 recharge SOC and voltage by fangaijun at 2018/02/2 end */
 //Huaqin added by tangqingyong at 20180226 for fg use external start
@@ -531,72 +535,79 @@
 		#address-cells = <2>;
 		#size-cells = <0>;
 
-		pm660_haptics: qcom,haptic@c000 {
+		pm660_haptics: qcom,haptics@c000 {
 			compatible = "qcom,pm660-haptics";
 			reg = <0xc000 0x100>;
+			reg-names = "haptics";
+			status = "okay";
+
 			interrupts = <0x1 0xc0 0x0 IRQ_TYPE_EDGE_BOTH>,
 				     <0x1 0xc0 0x1 IRQ_TYPE_EDGE_BOTH>;
 			interrupt-names = "hap-sc-irq", "hap-play-irq";
-			qcom,pmic-misc = <&pm660_misc>;
-			qcom,misc-clk-trim-error-reg = <0xf3>;
-			qcom,actuator-type = "lra";
-			qcom,vmax-mv = <1500>;
-			qcom,play-rate-us = <1200>;
-			qcom,lra-resonance-sig-shape = "sine";
-			qcom,lra-auto-resonance-mode = "qwd";
-			qcom,lra-allow-variable-play-rate;
 
+			qcom,actuator-type = "erm"; 
+			qcom,vmax-mv = <2100>;
+			qcom,play-rate-us = <1200>;
+			qcom,max-play-time-ms = <15000>;
+
+			/* 0: CLICK */
 			wf_0 {
-				/* CLICK */
 				qcom,effect-id = <0>;
-				qcom,wf-vmax-mv = <1200>;
-				qcom,wf-pattern = [3e 3e 3e];
+				qcom,wf-vmax-mv = <1900>;
+				qcom,wf-pattern = /bits/ 8 <0x3e 0x3e 0x3e>;
 				qcom,wf-play-rate-us = <1200>;
-				qcom,wf-brake-pattern = [01 00 00 00];
-				qcom,lra-auto-resonance-disable;
-			};
-			wf_1 {
-				/* DOUBLE CLICK */
-				qcom,effect-id = <1>;
-				qcom,wf-vmax-mv = <1200>;
-				qcom,wf-pattern = [7e 3e 02 02 02 02 02 02];
-				qcom,wf-play-rate-us = <1200>;
-				qcom,wf-repeat-count = <2>;
+				qcom,wf-repeat-count = <1>;
 				qcom,wf-s-repeat-count = <1>;
-				qcom,lra-auto-resonance-disable;
 			};
+
+			/* 1: DOUBLE CLICK */
+			wf_1 {
+				qcom,effect-id = <1>;
+				qcom,wf-vmax-mv = <1900>;
+				qcom,wf-pattern = /bits/ 8 <0x7e 0x3e 0x00 0x00 0x7e 0x7e>;
+				qcom,wf-play-rate-us = <1200>;
+				qcom,wf-repeat-count = <1>;
+				qcom,wf-s-repeat-count = <1>;
+			};
+
+			/* 2: TICK (Мягкий клик клавиатуры/скролла) */
 			wf_2 {
-				/* TICK */
 				qcom,effect-id = <2>;
-				qcom,wf-vmax-mv = <1200>;
-				qcom,wf-pattern = [50 50];
+				qcom,wf-vmax-mv = <2000>;
+				qcom,wf-pattern = /bits/ 8 <0x40 0x00>;
 				qcom,wf-play-rate-us = <1200>;
-				qcom,lra-auto-resonance-disable;
+				qcom,wf-repeat-count = <1>;
+				qcom,wf-s-repeat-count = <1>;
 			};
+
+			/* 3: THUD */
 			wf_3 {
-				/* THUD */
 				qcom,effect-id = <3>;
-				qcom,wf-vmax-mv = <1200>;
-				qcom,wf-pattern = [7e 3e 7e];
+				qcom,wf-vmax-mv = <2100>;
+				qcom,wf-pattern = /bits/ 8 <0x3e 0x7e 0x7e>;
 				qcom,wf-play-rate-us = <1200>;
-				qcom,lra-auto-resonance-disable;
+				qcom,wf-repeat-count = <1>;
+				qcom,wf-s-repeat-count = <1>;
 			};
+
+			/* 4: POP */
 			wf_4 {
-				/* POP */
 				qcom,effect-id = <4>;
-				qcom,wf-vmax-mv = <1200>;
-				qcom,wf-pattern = [7e 7e];
+				qcom,wf-vmax-mv = <2000>;
+				qcom,wf-pattern = /bits/ 8 <0x60 0x00>;
 				qcom,wf-play-rate-us = <1200>;
-				qcom,lra-auto-resonance-disable;
+				qcom,wf-repeat-count = <1>;
+				qcom,wf-s-repeat-count = <1>;
 			};
+
+			/* 5: HEAVY CLICK (Сильный щелчок) */
 			wf_5 {
-				/* HEAVY CLICK */
 				qcom,effect-id = <5>;
-				qcom,wf-vmax-mv = <1200>;
-				qcom,wf-pattern = [7e 3e 7e];
+				qcom,wf-vmax-mv = <2100>;
+				qcom,wf-pattern = /bits/ 8 <0x7e 0x3e 0x7e 0x7e>;
 				qcom,wf-play-rate-us = <1200>;
-				qcom,wf-brake-pattern = [03 00 00 00];
-				qcom,lra-auto-resonance-disable;
+				qcom,wf-repeat-count = <1>;
+				qcom,wf-s-repeat-count = <1>;
 			};
 		};
 	};
